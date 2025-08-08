@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { DollarSign, Menu, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
+import Wallet from './Wallet'; // Import the new Wallet component
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
@@ -8,11 +9,11 @@ const Navbar = () => {
 
   const navItems = [
     { name: 'Home', path: '/' },
-    { name: 'Financial Calculator', path: '/calculator' },
-    { name: 'Expense Tracker', path: '/expense-tracker' },
+    { name: 'Calculator', path: '/calculator' },
+    { name: 'Tracker', path: '/expense-tracker' },
     { name: 'Quizzes', path: '/quizzes' },
-    { name: 'Loans and Scholarships', path: '/loans-scholarships' },
-    { name: 'Stocks and Investments', path: '/stocks-investments' }
+    { name: 'Loans & Grants', path: '/loans-scholarships' },
+    { name: 'Investments', path: '/stocks-investments' }
   ];
 
   return (
@@ -20,15 +21,15 @@ const Navbar = () => {
       <div className="container">
         <div className="navbar-content">
           <Link to="/" className="navbar-brand">
-            <DollarSign size={24} />
+            <Wallet size={24} /> {/* Use the Wallet component here */}
             Budget Buddy
           </Link>
-          
+
           <ul className="navbar-nav">
             {navItems.map((item) => (
               <li key={item.name}>
-                <Link 
-                  to={item.path} 
+                <Link
+                  to={item.path}
                   className={`navbar-link ${location.pathname === item.path ? 'active' : ''}`}
                 >
                   {item.name}
@@ -36,14 +37,17 @@ const Navbar = () => {
               </li>
             ))}
           </ul>
-          
+
           <div className="navbar-actions">
             <Link to="/login" className="btn-primary">
-              Sign Up / Log In
+              Log In
+            </Link>
+            <Link to="/signup" className="btn-primary">
+              Sign Up
             </Link>
           </div>
-          
-          <button 
+
+          <button
             className="mobile-menu-toggle"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
           >

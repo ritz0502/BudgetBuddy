@@ -1,18 +1,18 @@
 import React, { useEffect } from 'react';
 import { Calculator, PieChart, GraduationCap, TrendingUp, Brain, Star } from 'lucide-react';
+import Spline from '@splinetool/react-spline';
+import TextPressure from './TextPressure'; // Import the TextPressure component
 
 const HomePage = () => {
   const scrollToFeatures = () => {
     const featuresSection = document.getElementById('features');
     if (featuresSection) {
-      // Add visible class for animation
       featuresSection.classList.add('visible');
       featuresSection.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
   useEffect(() => {
-    // Check if features section is in viewport
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -54,6 +54,12 @@ const HomePage = () => {
       icon: <Brain size={40} />,
       title: "Quick Quizzes",
       description: "Test your financial knowledge with engaging quizzes."
+    },
+    {
+      icon: <Star size={40} />,
+      title: "Resources and Guides",
+      description: "Access articles, tips, and financial guides.",
+      target: "resources-guides"
     }
   ];
 
@@ -83,7 +89,7 @@ const HomePage = () => {
     for (let i = 0; i < fullStars; i++) {
       stars.push(<Star key={i} size={16} className="star" fill="currentColor" />);
     }
-    
+
     if (hasHalfStar) {
       stars.push(<Star key="half" size={16} className="star" fill="currentColor" style={{ opacity: 0.5 }} />);
     }
@@ -103,9 +109,21 @@ const HomePage = () => {
         <div className="container">
           <div className="hero-content">
             <div className="hero-text">
-              <h1>Welcome to Budget Buddy</h1>
+              {/* Replace the heading and paragraph with the TextPressure component */}
+              <TextPressure
+                text="Budget Buddy"
+                flex={true}
+                alpha={false}
+                stroke={false}
+                width={true}
+                weight={true}
+                italic={true}
+                textColor="#2d5016" // Use your heading color
+                strokeColor="#ff0000"
+                minFontSize={100}
+              />
               <p>
-                Your ultimate financial companion designed to help students 
+                Your ultimate financial companion designed to help students
                 manage their money wisely.
               </p>
               <button className="btn-primary" onClick={scrollToFeatures}>
@@ -113,10 +131,7 @@ const HomePage = () => {
               </button>
             </div>
             <div className="hero-image">
-              <img 
-                src="https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg?auto=compress&cs=tinysrgb&w=600" 
-                alt="Students working together on finances"
-              />
+              <Spline scene="https://prod.spline.design/6CUaAmLi9SsYXWmx/scene.splinecode" />
             </div>
           </div>
         </div>
@@ -128,13 +143,41 @@ const HomePage = () => {
           <h2 className="section-title">Our Features</h2>
           <div className="features-grid">
             {features.map((feature, index) => (
-              <div key={index} className="feature-card fade-in">
+              <div
+                key={index}
+                className="feature-card fade-in"
+                onMouseMove={(e) => {
+                  const card = e.currentTarget;
+                  const rect = card.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const y = e.clientY - rect.top;
+                  card.style.setProperty('--mouse-x', `${x}px`);
+                  card.style.setProperty('--mouse-y', `${y}px`);
+                }}
+                onMouseLeave={(e) => {
+                  const card = e.currentTarget;
+                  card.style.setProperty('--mouse-x', `50%`);
+                  card.style.setProperty('--mouse-y', `50%`);
+                }}
+              >
                 <div style={{ color: '#7cb342', marginBottom: '1rem' }}>
                   {feature.icon}
                 </div>
                 <h3>{feature.title}</h3>
                 <p>{feature.description}</p>
-                <button className="btn-outline">Explore More</button>
+                <button
+                  className="btn-outline"
+                  onClick={() => {
+                    if (feature.target) {
+                      const section = document.getElementById(feature.target);
+                      if (section) {
+                        section.scrollIntoView({ behavior: 'smooth' });
+                      }
+                    }
+                  }}
+                >
+                  Explore More
+                </button>
               </div>
             ))}
           </div>
@@ -154,7 +197,7 @@ const HomePage = () => {
               </div>
             ))}
           </div>
-          
+
           <div className="community-cta">
             <p className="community-text">Join and be a part of the community now!</p>
             <button className="btn-primary">Sign Up</button>
@@ -163,7 +206,7 @@ const HomePage = () => {
       </section>
 
       {/* Resources Section */}
-      <section className="resources-section">
+      <section id="resources-guides" className="resources-section">
         <div className="container">
           <h2 className="section-title">Resources and Guides</h2>
           <div className="resources-grid">

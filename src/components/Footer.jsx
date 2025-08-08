@@ -1,5 +1,5 @@
 import React from 'react';
-import { DollarSign } from 'lucide-react';
+import Wallet from './Wallet';
 
 const Footer = () => {
   return (
@@ -7,9 +7,10 @@ const Footer = () => {
       <div className="container">
         <div className="footer-content">
           <div className="footer-section">
+            {/* Added a custom style to the h4 to align it with the icon */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <DollarSign size={20} color="#7cb342" />
-              <h4>Budget Buddy</h4>
+              <Wallet size={20} color="#e8f5e8" />
+              <h4 style={{ margin: 0 }}>Budget Buddy</h4>
             </div>
             <p style={{ color: '#ccc', fontSize: '0.9rem' }}>
               Your friendly way to manage your money wisely.
