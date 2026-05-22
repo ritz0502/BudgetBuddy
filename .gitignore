@@ -27,3 +27,4 @@ dist-ssr/
 # temp files
 *.lnk
 changes*.txt
+trackerdocs/
