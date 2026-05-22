@@ -1,0 +1,73 @@
+{
+  "hash": "08a5f0b1",
+  "configHash": "8ed9d7ff",
+  "lockfileHash": "648b736a",
+  "browserHash": "39def11f",
+  "optimized": {
+    "@splinetool/react-spline": {
+      "src": "../../node_modules/@splinetool/react-spline/dist/react-spline.js",
+      "file": "@splinetool_react-spline.js",
+      "fileHash": "87f0b413",
+      "needsInterop": false
+    },
+    "lucide-react": {
+      "src": "../../node_modules/lucide-react/dist/esm/lucide-react.js",
+      "file": "lucide-react.js",
+      "fileHash": "efb42149",
+      "needsInterop": false
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "a4eb54d0",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "0eed8f5d",
+      "needsInterop": true
+    },
+    "react-router-dom": {
+      "src": "../../node_modules/react-router-dom/dist/index.mjs",
+      "file": "react-router-dom.js",
+      "fileHash": "06b3f83a",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "boolean-XKMDEG6K": {
+      "file": "boolean-XKMDEG6K.js"
+    },
+    "howler-HFV3EF3T": {
+      "file": "howler-HFV3EF3T.js"
+    },
+    "opentype-JBJQJ6JQ": {
+      "file": "opentype-JBJQJ6JQ.js"
+    },
+    "ui-QGPUGPOQ": {
+      "file": "ui-QGPUGPOQ.js"
+    },
+    "gaussian-splat-compression-YWLMX5L3": {
+      "file": "gaussian-splat-compression-YWLMX5L3.js"
+    },
+    "chunk-QMYD5KZB": {
+      "file": "chunk-QMYD5KZB.js"
+    },
+    "chunk-QTVD6AVW": {
+      "file": "chunk-QTVD6AVW.js"
+    },
+    "navmesh-23L2OVGQ": {
+      "file": "navmesh-23L2OVGQ.js"
+    },
+    "physics-XW3ZW3JP": {
+      "file": "physics-XW3ZW3JP.js"
+    },
+    "process-4OA3RB7F": {
+      "file": "process-4OA3RB7F.js"
+    },
+    "chunk-PR4QN5HX": {
+      "file": "chunk-PR4QN5HX.js"
+    }
+  }
+}

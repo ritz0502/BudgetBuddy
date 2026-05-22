@@ -1,0 +1,30 @@
+services:
+  # ── Express / Node backend ───────────────────────────────────────────────────
+  backend:
+    build: ./backend            # Build from backend/Dockerfile
+    ports:
+      - "5000:5000"             # Map host:container
+    env_file:
+      - .env                    # Load all env vars from root .env
+    environment:
+      # Override MONGO_URI for Docker only.
+      # Inside a container, "localhost" = the container itself, NOT your host PC.
+      # "host.docker.internal" is Docker Desktop's magic hostname that always
+      # resolves to the host machine — so the container can reach your local MongoDB.
+      - MONGO_URI=mongodb://host.docker.internal:27017/budget_buddy_db
+    volumes:
+      - ./backend:/app          # Bind-mount source for hot-reload
+      - /app/node_modules       # Anonymous volume so host modules don't override container's
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── Redis (in-memory cache / session store) ──────────────────────────────────
+  redis:
+    image: redis:alpine         # Smallest official Redis image
+    ports:
+      - "6379:6379"             # Expose so you can connect locally with redis-cli too
+    restart: unless-stopped
+
+# NOTE: MongoDB is NOT in Docker — it runs on your host machine (or Atlas).
+# NOTE: Frontend is NOT in Docker — run it with: cd frontend && npm run dev

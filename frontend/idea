@@ -1,0 +1,54 @@
+Project Abstract
+Budget Buddy is a comprehensive, gamified full-stack platform designed to bridge the financial literacy gap among college students. Recognizing that students often struggle with budgeting, debt management, and investing, this portal transitions users from basic financial education to practical application. By combining interactive learning modules (quizzes and guides) with actionable tools (expense tracking, scholarship finders, and paper-trading simulators), Budget Buddy empowers students to build healthy financial habits in a risk-free, engaging environment.
+
+Core Features & Modules
+1. Secure User Authentication & Dashboard (The Hub)
+Feature: Users can create an account, log in securely, and view a personalized dashboard.
+
+Backend: JWT (JSON Web Tokens) for stateless authentication and bcrypt for password hashing.
+
+Data: The dashboard fetches and displays a snapshot of the user's current balance, recent expenses, and quiz progress.
+
+2. Smart Expense & Budget Tracker
+Feature: Students can log their daily expenses and incomes, categorize them (e.g., Food, Rent, Textbooks), and set monthly budget limits.
+
+Visuals: Use libraries like Chart.js or Recharts on your React frontend to generate dynamic pie charts and bar graphs of their spending habits.
+
+Backend: Create a CRUD (Create, Read, Update, Delete) REST API to manage transaction data.
+
+3. Gamified Financial Literacy (Quizzes)
+Feature: Move your hardcoded quizzes to the database. Users earn points, levels, or badges for completing quizzes (like "Investing 101" or "Credit Scores").
+
+Backend: A Quiz model in MongoDB to store questions, options, and correct answers. A Progress schema to track user scores and unlock subsequent, harder quizzes.
+
+4. Paper Trading / Stock Simulator (The "Wow" Factor)
+Feature: Allow students to practice investing without real money. Give every new account a mock "$10,000" portfolio.
+
+Integration: Use a free stock market API (like Alpha Vantage or Finnhub) to fetch real-time stock prices. Students can "buy" and "sell" shares, and track their portfolio's performance over time.
+
+5. Dynamic Scholarship & Grant Finder
+Feature: A searchable, filterable database of scholarships.
+
+Backend: You can either scrape this data (using a tool like Puppeteer in Node.js) or use a third-party API. Users can bookmark scholarships they want to apply for, which saves a reference to their user profile in MongoDB.
+
+Suggested Tech Stack Architecture
+Frontend (Already in progress): React.js (Vite), Tailwind CSS (or your current CSS solution), Axios (for API calls), Recharts (for data viz).
+
+Backend: Node.js, Express.js.
+
+Database: MongoDB (using Mongoose as the ODM).
+
+External APIs: * Alpha Vantage / Polygon.io (for live stock data)
+
+NewsAPI (to pull in recent financial news for your "Resources" tab)
+
+High-Level Database Schema Idea (Mongoose/MongoDB)
+To get your backend started, here are the primary collections you'll need:
+
+Users: _id, name, email, passwordHash, mockBalance, totalQuizPoints.
+
+Transactions: _id, userId (ref User), amount, type (income/expense), category, date, description.
+
+Quizzes: _id, title, difficulty, questions (Array of objects containing question text, options, and the correct index).
+
+Portfolios (For the Stock Simulator): _id, userId (ref User), tickerSymbol, quantityOwned, averagePurchasePrice.

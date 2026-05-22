@@ -198,10 +198,10 @@ const HomePage = () => {
             ))}
           </div>
 
-          <div className="community-cta">
+          {/* <div className="community-cta">
             <p className="community-text">Join and be a part of the community now!</p>
             <button className="btn-primary">Sign Up</button>
-          </div>
+          </div> */}
         </div>
       </section>
 

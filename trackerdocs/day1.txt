@@ -1,0 +1,289 @@
+===================================================================
+      BUDGET BUDDY — SMART EXPENSE TRACKER & REFINEMENTS
+                 DAY 1 TECHNICAL SUMMARY & GUIDE
+===================================================================
+
+This document outlines the technical architecture, data model, backend API,
+integration mechanisms, frontend component orchestration, and tech-interview
+preparation guidelines for the Smart Expense Tracker module built today.
+
+-------------------------------------------------------------------
+1. EXECUTIVE OVERVIEW
+-------------------------------------------------------------------
+The Smart Expense Tracker is a complete personal finance orchestrator that
+allows users to record income/expenses, upload receipt proofs, set monthly 
+category budget limits, view real-time graphical analytics (daily bar charts 
+and category breakdown donuts), and navigate historical records.
+
+The module is engineered to be highly performant, utilizing Redis caching to
+reduce database load on complex aggregation pipelines, and fully responsive 
+using a modern, Harmonious HSL/CSS design system.
+
+-------------------------------------------------------------------
+2. DATA ARCHITECTURE (DATABASE MODELS & RELATIONSHIPS)
+-------------------------------------------------------------------
+We utilize MongoDB (via Mongoose) as our database. The system relies on three
+primary models: User, Transaction, and Budget.
+
+[ User Collection ] (Referenced)
+  - _id: ObjectId (Primary Key)
+  - name: String
+  - email: String (Unique)
+  - xp: Number (Gamification points)
+  - level: Number
+
+[ Transaction Collection ]
+  - _id: ObjectId (Primary Key)
+  - userId: ObjectId -> Ref: 'User' (Required, Indexed)
+  - type: String [Enum: 'income', 'expense'] (Required)
+  - amount: Number (Required, Min: 0)
+  - category: String (Required, Enum: 'Food', 'Rent', 'Transport',
+      'Education', 'Entertainment', 'Health', 'Shopping', 'Utilities',
+      'Salary', 'Other')
+  - description: String (Optional, defaults to empty)
+  - date: Date (Required, defaults to Date.now)
+  - receiptUrl: String (Optional, Cloudinary URL)
+
+[ Budget Collection ]
+  - _id: ObjectId (Primary Key)
+  - userId: ObjectId -> Ref: 'User' (Required, Indexed)
+  - category: String (Required, Enum: matching Transactions)
+  - limit: Number (Required, Min: 0)
+  - month: Number (Required, range 1-12)
+  - year: Number (Required)
+  - Index: Compound Unique index on { userId: 1, category: 1, month: 1, year: 1 }
+
+--- Relationship Diagram ---
+Each Transaction and Budget document is linked to a parent User document via
+foreign key 'userId'.
+
+      +-------------------+
+      |    User Schema    |
+      +---------+---------+
+                | (1 to Many)
+                +----------------------------+
+                |                            |
+      +---------v---------+        +---------v---------+
+      | Transaction Schema|        |   Budget Schema   |
+      +-------------------+        +-------------------+
+      | - userId [FK]     |        | - userId [FK]     |
+      | - amount          |        | - category        |
+      | - category        |        | - limit           |
+      | - type            |        | - month           |
+      | - date            |        | - year            |
+      | - receiptUrl      |        +-------------------+
+      +-------------------+
+
+* Design Note: The compound unique index on Budget ensures that a user can set
+  exactly ONE budget limit per category, per month, per year. This makes upserting
+  trivial using Mongo's findOneAndUpdate.
+
+-------------------------------------------------------------------
+3. BACKEND API ENDPOINTS
+-------------------------------------------------------------------
+All routes (except Auth) are protected by JWT Bearer token authentication.
+
+-- 3.1. TRANSACTION ROUTES (/api/transactions) --
+
+* POST /
+  - Description: Creates a new transaction. Supports multipart/form-data.
+  - File Upload: Processed by Multer + Cloudinary storage. If a file is uploaded,
+    attaches the Cloudinary URL to transaction.receiptUrl.
+  - Invalidation: Triggers deletion of Redis cache keys for:
+    - Monthly summary: `summary:${userId}:${month}:${year}`
+    - 6-Month overview: `overview:${userId}`
+
+* GET /
+  - Description: Fetch all transactions for the logged-in user.
+  - Query Params:
+    - `month` / `year`: Filter by date range (1st of month to 1st of next month).
+    - `type` / `category`: Filter by income/expense or specific categories.
+    - `limit`: Restrict the number of returned transactions (e.g. for widgets).
+
+* PUT /:id
+  - Description: Updates an existing transaction. Supports receipt file replacement.
+  - Invalidation: Identifies the old date and new date, invalidating both monthly
+    summary cache keys and the 6-month overview key.
+
+* DELETE /:id
+  - Description: Deletes a transaction by ID.
+  - Invalidation: Deletes summary cache for that transaction's month/year and overview.
+
+* GET /summary
+  - Description: Returns aggregate figures for the selected month/year.
+  - Logic: 
+    1. Checks Redis cache `summary:${userId}:${month}:${year}`. If found, returns it.
+    2. Runs MongoDB Aggregation pipeline to sum `totalIncome` and `totalExpenses` (by type).
+    3. Runs second aggregation pipeline to calculate spent category totals for 'expense' types.
+    4. Fetches all configured Budgets for the user for that month/year.
+    5. Merges category spending totals and budget limits:
+       - Calculates `percentUsed = (spent / limit) * 100` rounded to 1 decimal.
+       - Injects categories where a budget is set but spending is zero (`total: 0`, `percentUsed: 0.0`).
+    6. Saves the merged object to Redis with a 1-hour TTL.
+
+* GET /monthly-overview
+  - Description: Returns total spending for the last 6 months (chronological).
+  - Logic: Aggregates expense documents, fills empty months with `total: 0`, and caches
+    result in Redis with a 24-hour TTL.
+
+-- 3.2. BUDGET ROUTES (/api/budgets) --
+
+* POST /
+  - Description: Upserts (creates or updates) a category budget limit.
+  - Body: { category, limit, month, year }
+  - Logic: Uses Mongoose `findOneAndUpdate` with `{ upsert: true, new: true, runValidators: true }`.
+  - Invalidation: Automatically deletes Redis summary cache key `summary:${userId}:${month}:${year}`
+    so the frontend UI progress bar updates immediately.
+
+* GET /
+  - Description: Retrieve all budget records for the current user, month, and year.
+
+-------------------------------------------------------------------
+4. MIDDLEWARE & COMPONENT INTEGRATION LAYERS
+-------------------------------------------------------------------
+
+-- 4.1. JWT Authorization Middleware (protect) --
+  Extracts the token from the request header (`Authorization: Bearer <TOKEN>`),
+  verifies it against the `JWT_SECRET` using `jsonwebtoken`, loads the matching User
+  from MongoDB, and attaches it to `req.user`.
+
+-- 4.2. Multer & Cloudinary Receipt Uploads --
+  Configured inside `backend/config/cloudinary.js`.
+  - Uses `multer-storage-cloudinary` as the engine.
+  - restrains storage folders to `budgetbuddy/receipts`.
+  - Allowed formats: jpg, jpeg, png, webp.
+  - If API credentials are not set, it falls back gracefully to saving the
+    transaction without a file path.
+
+-- 4.3. Redis Caching Strategy (Cache Consistency) --
+  To ensure high responsiveness:
+  - Cache Read: `/summary` reads from Redis before checking Mongo.
+  - Cache Write: `/summary` populates Redis after aggregation.
+  - Cache Invalidation (Event-Driven): Creating, updating, deleting a transaction,
+    or setting a budget limit immediately invokes `redis.del(cacheKey)`, forcing
+    cache re-computation on the next read (Write-Through/Invalidation pattern).
+
+-------------------------------------------------------------------
+5. FRONTEND COMPONENT ARCHITECTURE & ORCHESTRATION
+-------------------------------------------------------------------
+Built in React and styled with a custom CSS design system.
+
+[ TrackerPage.jsx ] (Page Orchestrator)
+  - Holds state for: `month`, `year` (month navigation), and `editingTransaction` (lifted state).
+  - Triggers asynchronous fetches for summary details and full lists upon mount
+    or whenever `month` / `year` navigation triggers occur.
+  - Renders top summary cards, navigation buttons, and mounts side-by-side grids.
+
+[ TransactionForm.jsx ] (Dual Mode: Add/Edit)
+  - Listens to `editingTransaction`.
+  - If null: operates in "Add Transaction" mode. Calls `POST /api/transactions`.
+  - If active: shifts form to "Edit Transaction" mode. Pre-populates all inputs.
+    Submit button text shifts to "Update Transaction". Invokes `PUT /api/transactions/:id`.
+  - Includes a "Cancel Edit" button that resets state.
+
+[ TransactionList.jsx ] (Filterable rows)
+  - Features tab filters ("All", "Income", "Expense").
+  - Houses row entries with an actions container that fades in on hover.
+  - Contains edit (pencil icon) and delete (trash icon) action triggers.
+  - Clicking the pencil updates the lifted state `editingTransaction` in the parent.
+
+[ CategoryPieChart.jsx ] (Double-Duty Component)
+  - Renders a modern Recharts Donut Pie Chart (`PieChart`, `Pie`, `Cell`, `Tooltip`).
+  - Colors are shaded in curated tones of forest green.
+  - Downward section aggregates the Monthly Budget progress.
+  - Features color-coded progress bars (Green < 80%, Yellow 80-100%, Red > 100%).
+  - Shows custom Red warning "Over budget" badges if limits are exceeded.
+  - Integrates inline, input fields to set/edit limits directly with inline Save and Cancel icons.
+
+[ DailySpendChart.jsx ] (Dynamic day counts)
+  - Receives `month` and `year` as props.
+  - Automatically calculates days in that navigated month (28/30/31 days) to index axis bars.
+  - Groups transactions into daily intervals dynamically.
+
+-------------------------------------------------------------------
+6. TECHNICAL INTERVIEW Q&A — PREPARATION PORTAL
+-------------------------------------------------------------------
+
+Q1: Why did you choose a NoSQL database (MongoDB) over a relational DB (SQL)
+    for this financial tracker?
+A1: MongoDB is exceptionally suited here due to its flexible document schema 
+    and strong horizontal scaling capabilities. Transactions in real-world 
+    finance apps often acquire varying metadata (e.g., receipt image links, 
+    different merchant tags, or external banking IDs). A document structure 
+    accommodates these structural variances without demanding heavy migrations 
+    or altering wide table structures. Furthermore, MongoDB's powerful 
+    Aggregation Framework allows us to compile total incomes, expenses, and 
+    hierarchical category breakdowns in single queries, bypassing multi-table joins.
+
+Q2: You mentioned that you lift the editing state in React. What does that mean
+    and why was it necessary?
+A2: "Lifting state up" involves moving shared state to the closest common ancestor 
+    of the components that need it. In this layout, `TransactionList` and 
+    `TransactionForm` are siblings. When a user hovers over a row in `TransactionList` 
+    and clicks the edit pencil, the form component (`TransactionForm`) needs to know 
+    which transaction was clicked, pre-populate its fields, and alter its submission 
+    handler to PUT. By lifting the `editingTransaction` state up to `TrackerPage.jsx` 
+    and passing down state accessors as props, the two siblings coordinate and 
+    synchronize instantly.
+
+Q3: How do you handle cache consistency in your Redis layer? What happens if
+    a user modifies a transaction?
+A3: We employ an event-driven cache invalidation strategy. When a user requests 
+    the monthly summary, the API first checks Redis. If there is a cache hit, we 
+    avoid a database load entirely. However, if the user performs a write operation 
+    (creating, updating, deleting a transaction, or upserting a budget limit), 
+    we invalidate that cache immediately by deleting the key:
+    `redis.del("summary:userId:month:year")`
+    This ensures absolute consistency; the next read request faces a cache miss, 
+    re-runs the database aggregations, and updates Redis with fresh data.
+
+Q4: What is the purpose of the compound unique index in your Budget schema?
+A4: The index is defined as: `budgetSchema.index({ userId:1, category:1, month:1, year:1 }, { unique:true })`
+    This guarantees data integrity at the database layer. It prevents duplicate 
+    budget limit definitions for a given category in the same month and year. 
+    Crucially, it enables atomic upserts. We can use Mongoose's:
+    `findOneAndUpdate({ userId, category, month, year }, { limit }, { upsert:true })`
+    This finds and updates the record if it exists, or inserts a new one if it does 
+    not. Because of the index, we are safe from race conditions generating duplicates.
+
+Q5: When running Node inside a Docker container on Windows, did you face any filesystem
+    syncing problems? How did you solve them?
+A5: Yes. Docker Compose bind-mounts the local directory (`./backend`) into the 
+    container's `/app` folder. On Windows, file change events (using inotify) 
+    sometimes fail to pass through the virtualized mount layer, meaning nodemon 
+    inside the Linux container doesn't see when we edit file definitions on Windows. 
+    We solved this by explicitly executing a container restart:
+    `docker-compose restart backend`
+    This re-scans the directory structure and loads the updated routes into memory. 
+    Additionally, we mapped an anonymous volume at `/app/node_modules` in our 
+    compose file to prevent the host's Windows `node_modules` from overriding the 
+    container's Linux-compiled binaries, which would cause runtime loading failures.
+
+Q6: In your getMonthlySummary controller, how did you handle categories that
+    have budget limits set but zero expense records?
+A6: If a user sets a budget of ₹5,000 for "Transport" but hasn't spent anything yet, 
+    the transaction aggregation pipeline will omit "Transport" completely because 
+    no transaction records exist. To solve this:
+    1. We aggregate expenses to get category totals.
+    2. We fetch all budgets set for the user, month, and year.
+    3. We use a JavaScript `Map` to merge them. We first insert all aggregated 
+       categories (calculating percentUsed).
+    4. Then we iterate over all user budgets. If a budgeted category is missing 
+       from our map, we manually inject it with:
+       `{ category: b.category, total: 0, limit: b.limit, percentUsed: 0.0 }`
+    5. This guarantees that the user sees their progress bar at 0% instead of 
+       having the category completely missing from their list.
+
+Q7: How did you implement your dynamic month navigation and coordinate it
+    with the Daily Spend bar chart?
+A7: The navigation state is held as `month` and `year` integers inside `TrackerPage.jsx`. 
+    Clicking `‹` or `›` adjusts the state, and a boundaries check ensures users cannot 
+    navigate into future months.
+    When a month/year shift occurs, a re-fetch pulls the transactions for that period.
+    We pass `month` and `year` down to `DailySpendChart.jsx` as props. Instead of 
+    hardcoding the current calendar month length, `DailySpendChart` dynamically 
+    evaluates the length using:
+    `const daysInMonth = new Date(year, month, 0).getDate();`
+    It initializes a day map for exactly that number of days (e.g. 28 for Feb, 31 for Dec) 
+    and iterates only over transactions belonging to that specific month/year.
+===================================================================
