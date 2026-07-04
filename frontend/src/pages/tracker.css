@@ -808,3 +808,367 @@
     gap: 16px;
   }
 }
+
+/* -- Receipt Image Hover Overlay ------------------------------------------------ */
+.receipt-preview-container {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.receipt-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  cursor: pointer;
+}
+
+.receipt-preview-container:hover .receipt-overlay {
+  opacity: 1;
+}
+
+.receipt-overlay:hover {
+  background: rgba(229, 57, 53, 0.7);
+}
+
+/* ── Warning budget icon ────────────────────────────────────────────────────── */
+.warn-budget-icon {
+  font-size: 0.8rem;
+  cursor: default;
+  line-height: 1;
+}
+
+/* ── Subscription Detector Card ─────────────────────────────────────────────── */
+.sub-detector-card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  border: 1px solid #e8f0e0;
+  margin-top: 20px;
+  overflow: hidden;
+}
+
+.sub-detector-header {
+  padding: 24px 28px 16px;
+  border-bottom: 1.5px solid #f0f0f0;
+}
+
+.sub-detector-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.sub-detector-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 3px;
+}
+
+.sub-detector-subtitle {
+  font-size: 0.8rem;
+  color: #999;
+}
+
+.sub-info-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #aaa;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.sub-info-btn:hover {
+  color: #4a7c1f;
+}
+
+.sub-tooltip {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  background: #333;
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  width: 220px;
+  line-height: 1.45;
+  z-index: 200;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+}
+
+.sub-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: 10px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 5px solid #333;
+}
+
+.sub-refresh-btn {
+  background: #f1f8eb;
+  border: none;
+  cursor: pointer;
+  color: #4a7c1f;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+
+.sub-refresh-btn:hover:not(:disabled) {
+  background: #d8efc4;
+}
+
+.sub-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spinAnim 0.8s linear infinite;
+}
+
+@keyframes spinAnim {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sub-total-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  background: linear-gradient(135deg, #f0f9e4 0%, #e8f5d9 100%);
+  border: 1px solid #c8e6c9;
+  border-radius: 10px;
+  padding: 10px 16px;
+  color: #2d5016;
+  font-size: 0.9rem;
+}
+
+.sub-total-banner strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.sub-detector-body {
+  padding: 0;
+}
+
+.sub-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 20px;
+  color: #aaa;
+  font-size: 0.88rem;
+}
+
+.sub-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #7cb342;
+  border-radius: 50%;
+  animation: spinAnim 0.7s linear infinite;
+}
+
+.sub-error {
+  padding: 20px 28px;
+  color: #c62828;
+  font-size: 0.88rem;
+  background: #fef0f0;
+  border-top: 1px solid #f5c6c6;
+}
+
+.sub-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 44px 28px;
+  color: #bbb;
+  text-align: center;
+  font-size: 0.9rem;
+  gap: 4px;
+}
+
+.sub-empty-hint {
+  font-size: 0.8rem;
+  color: #ccc;
+  margin-top: 4px;
+}
+
+.sub-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sub-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 28px;
+  border-bottom: 1px solid #f5f5f5;
+  transition: background 0.15s ease;
+}
+
+.sub-row:last-child {
+  border-bottom: none;
+}
+
+.sub-row:hover {
+  background: #fafdf6;
+}
+
+.sub-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f1f8eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.sub-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sub-desc {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.sub-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sub-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #4a7c1f;
+  background: #e8f5e0;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.sub-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.75rem;
+  color: #aaa;
+}
+
+.sub-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sub-amount {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #e53935;
+  white-space: nowrap;
+}
+
+.sub-cancel-btn {
+  background: none;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #888;
+  padding: 4px 10px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.sub-cancel-btn:hover:not(:disabled) {
+  border-color: #e53935;
+  color: #e53935;
+  background: #fef0f0;
+}
+
+.sub-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+  .sub-detector-header,
+  .sub-row {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sub-meta {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .sub-right {
+    align-items: flex-end;
+  }
+}
+
+/* ── Suggested Category Badge ─────────────────────────────────────────────── */
+.suggested-badge {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  background-color: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  animation: fadeIn 0.3s ease;
+}
+

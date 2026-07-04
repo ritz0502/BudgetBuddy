@@ -1,0 +1,304 @@
+=========================================================
+INVESTLAB DAY 2 - FRONTEND & INTEGRATION
+INTERVIEW PREPARATION & SYSTEM DESIGN DOCUMENT
+=========================================================
+
+SECTION 1 — Feature Overview
+---------------------------------------------------------
+What InvestLab is:
+InvestLab is a real-time, risk-free paper trading simulator integrated directly into BudgetBuddy. It provides users with virtual cash to practice buying and selling actual stocks using live market data.
+
+Why it exists inside BudgetBuddy:
+BudgetBuddy helps users manage expenses and save money. InvestLab takes the logical next step: teaching users how to grow those savings. By evaluating a user's "Investment Readiness" based on their budgeting habits, it bridges the gap between saving and wealth building.
+
+Student use case & Educational purpose:
+Students and beginners often fear losing money in the stock market. InvestLab provides a sandbox environment to learn market dynamics, understand portfolio valuation, and practice emotional discipline without any financial risk.
+
+Difference between paper trading and real trading:
+Paper trading uses simulated money but real-time market data. Trades execute instantly at the current market price without broker fees, liquidity constraints, or actual financial loss. Real trading involves actual capital risk, slippage, and brokerage execution delays.
+
+Why this feature adds value to BudgetBuddy:
+It transforms a standard expense tracker into a comprehensive financial literacy platform. It encourages users to stick to their budgets (to improve their Readiness Score) and gamifies the learning process of investing.
+
+SECTION 2 — Day 2 Scope
+---------------------------------------------------------
+Day 2 focused on building the React frontend and integrating it with the Day 1 Node.js/Express backend. 
+
+Exactly what was implemented:
+1. InvestLab Page: The main dashboard layout coordinating all components.
+2. Navbar Integration: Added the "InvestLab" route to the main navigation.
+3. Readiness Card: A UI widget displaying the user's Investment Readiness score, dynamically fetched from the backend calculation engine.
+4. Watchlist: A live ticker displaying real-time prices for top stocks (AAPL, MSFT, etc.).
+5. Portfolio Metrics: High-level summary showing Virtual Portfolio Value, Cash Available, Holdings Value, and Total P/L.
+6. Buy Stock Panel: A form allowing users to execute BUY orders using their virtual cash.
+7. Current Holdings Table: A dynamic data grid listing owned stocks, bought price, live current price, and live P/L per share.
+8. Sell Modal: A popup allowing users to liquidate specific quantities of their holdings.
+9. Trade History: A chronological list of past transactions.
+10. Socket.io Integration: Connecting the React frontend to the backend WebSocket server to stream live prices.
+11. Frontend ↔ Backend Integration: Securing API calls with JWT tokens via Axios interceptors.
+
+SECTION 3 — Architecture Overview
+---------------------------------------------------------
+System Architecture:
+
+User Browser
+   │
+   ▼
+[ React Frontend ] 
+   │   (Components, Custom Hooks, Context API)
+   │
+   ├─► [ REST APIs (Axios) ] ───► [ Node.js/Express Backend ]
+   │                                  │
+   │                                  ├──► MongoDB (Portfolios, Trades)
+   │                                  └──► Readiness Engine (Logic)
+   │
+   └─► [ Socket.io Client ] ◄───► [ Socket.io Server ]
+                                      ▲
+                                      │ (Redis Pub/Sub)
+                                      │
+                                [ EventEmitter ]
+                                      ▲
+                                      │
+                              [ Finnhub WebSocket ]
+                                      ▲
+                                      │
+                                 Live Market
+
+Explanation of Layers:
+- React Frontend: Renders the UI and manages local/shared state.
+- REST APIs: Handles transactional data (buying, selling, fetching portfolio).
+- Socket.io: Handles streaming data (live stock prices) for low-latency updates.
+- Node.js Backend: Acts as the gateway, executing business logic and validating trades.
+- Finnhub: The external 3rd-party data provider pushing live market trades.
+
+SECTION 4 — Folder Structure
+---------------------------------------------------------
+pages/
+  InvestLabPage.jsx      -> Main route entry point. Assembles all components into a dashboard.
+
+components/investlab/
+  InvestLabHero.jsx      -> Top banner showing Portfolio Value and Readiness summary.
+  ReadinessCard.jsx      -> Detailed breakdown of the readiness score and progress bars.
+  Watchlist.jsx          -> Horizontal scrolling list of live stock prices.
+  PortfolioMetrics.jsx   -> 4-card grid showing Cash, Holdings, Value, and P/L.
+  BuyStockCard.jsx       -> The input form to execute a buy trade.
+  HoldingsTable.jsx      -> Table displaying owned stocks and their real-time valuations.
+  SellModal.jsx          -> Hidden modal triggered by clicking "Sell" on a holding.
+  TradeHistory.jsx       -> List rendering past trades fetched from the DB.
+
+hooks/
+  usePortfolio.js        -> Fetches portfolio data; manages loading/error states.
+  useReadiness.js        -> Fetches readiness score based on user budgeting history.
+  useTradeHistory.js     -> Fetches paginated trade logs.
+  useMarketPrices.js     -> Manages the Socket.io connection and real-time price dictionary.
+
+SECTION 5 — React Concepts Used
+---------------------------------------------------------
+Functional Components: Used exclusively instead of Class components for cleaner syntax.
+Props: Passed down from InvestLabPage to child components (e.g., passing `prices` to `HoldingsTable`).
+State (useState): Used to track form inputs (quantity) and modal visibility.
+Effect (useEffect): Used to trigger API calls on component mount and manage WebSocket lifecycles.
+Custom Hooks: Extracted complex fetching and socket logic out of UI components into reusable functions.
+Component Composition: Building the complex dashboard out of small, focused components.
+Conditional Rendering: Showing "Loading..." spinners when data is null, or hiding the SellModal when `isOpen` is false.
+Event Handling: `onChange` for inputs, `onClick` for buy/sell buttons.
+
+SECTION 6 — Custom Hooks Deep Dive
+---------------------------------------------------------
+useMarketPrices.js:
+- Purpose: Connects to Socket.io and maintains a dictionary of live prices.
+- Socket Connection: Initializes `io('/', { path: '/socket.io' })`.
+- Listeners: Listens for `priceSnapshot` (initial load) and `priceUpdate` (incremental ticks).
+- Cleanup: Returns `() => socket.disconnect()` in the `useEffect` to prevent memory leaks when the user navigates away.
+
+```javascript
+// snippet
+socket.on('priceUpdate', (update) => {
+  setPrices((prev) => {
+    const next = { ...prev };
+    Object.keys(update.data).forEach(sym => {
+      next[sym] = update.data[sym]?.price || next[sym];
+    });
+    return next;
+  });
+});
+```
+
+usePortfolio.js:
+- Purpose: Fetches the user's portfolio data securely.
+- API Flow: Uses Axios with `Authorization: Bearer ${user.token}`.
+- State: Returns `{ portfolio, loading, error, refreshPortfolio }`. `refreshPortfolio` allows child components to trigger a refetch after a successful buy/sell.
+
+```javascript
+export const usePortfolio = () => {
+  const { user } = useAuth();
+  const [portfolio, setPortfolio] = useState(null);
+  
+  const fetchPortfolio = useCallback(async () => {
+    const res = await axios.get('/api/investlab/portfolio', {
+      headers: { Authorization: `Bearer ${user.token}` }
+    });
+    setPortfolio(res.data);
+  }, [user]);
+
+  useEffect(() => { fetchPortfolio(); }, [fetchPortfolio]);
+  return { portfolio, refreshPortfolio: fetchPortfolio };
+};
+```
+
+useReadiness.js & useTradeHistory.js:
+Follow the exact same pattern as `usePortfolio`, leveraging Axios and `useAuth` to hit their respective endpoints.
+
+SECTION 7 — Component Deep Dive
+---------------------------------------------------------
+BuyStockCard.jsx
+- Purpose: Execute buy orders.
+- State: `symbol`, `quantity`, `loading`, `error`, `success`.
+- Interaction: Reads `prices` prop to calculate required cash. On submit, sends a POST request to `/api/investlab/buy`.
+- On Success: Calls `onBuySuccess()` prop to trigger portfolio and trade history refreshes.
+
+```javascript
+const handleBuy = async (e) => {
+  e.preventDefault();
+  await axios.post('/api/investlab/buy', 
+    { symbol, quantity: Number(quantity), price: currentPrice },
+    { headers: { Authorization: `Bearer ${user.token}` } }
+  );
+  setSuccess('Purchase successful!');
+  onBuySuccess(); // Triggers parent refetch
+};
+```
+
+HoldingsTable.jsx
+- Purpose: Display owned stocks.
+- Logic: Maps over `portfolio.holdings`. Calculates `Gain/Loss = Current Price - Bought At`. Calculates `Total P/L = Gain/Loss * Quantity`.
+- Conditional Styling: Uses ternary operators to apply green (`text-positive`) or red (`text-negative`) classes based on profitability.
+
+```javascript
+const gainLossPerShare = currentPrice - h.avgBuyPrice;
+const isProfit = gainLossPerShare >= 0;
+
+<td className={isProfit ? 'text-positive' : 'text-negative'}>
+  {isProfit ? '+' : ''}{gainLossPerShare}
+</td>
+```
+
+SECTION 8 — API Integration
+---------------------------------------------------------
+GET /api/investlab/portfolio
+- Purpose: Fetches cash balance and holdings.
+- Detailed Flow:
+  1. Frontend: `usePortfolio` hook calls `axios.get` with the user's JWT.
+  2. Backend Middleware: `protect` middleware decodes the JWT and sets `req.user`.
+  3. Backend Controller: `getPortfolio` queries MongoDB `Portfolio.findOne({ userId })`.
+  4. Backend Logic: Maps through the holdings, calculates `holdingsValue` and `totalPnL` dynamically based on baseline prices.
+  5. Response: JSON object containing cash and arrays of holdings.
+  6. Frontend UI: Component updates, `PortfolioMetrics` renders total values.
+
+POST /api/investlab/buy
+- Purpose: Executes a buy order.
+- Detailed Flow:
+  1. Frontend: User fills `BuyStockCard` form. Component sends `{ symbol, quantity, price }` via POST.
+  2. Backend Middleware: JWT is verified.
+  3. Backend Controller: `buyStock` executes. Queries user's `Portfolio`.
+  4. Backend Logic: Checks if `cashBalance >= requiredCost`. If sufficient, deducts cash. If holding exists, updates `quantity` and recalculates a weighted `avgBuyPrice`. If new, pushes to `holdings` array.
+  5. Backend DB: Saves `Portfolio` document. Creates a new `Trade` document (type: 'buy').
+  6. Response: HTTP 201 Created.
+  7. Frontend Callback: Form receives 201, sets success state, calls `onBuySuccess()`.
+  8. Frontend Refetch: `InvestLabPage` calls `refreshPortfolio()` and `refreshTrades()`. Data flows back down the React tree to instantly update `HoldingsTable` and `PortfolioMetrics`.
+
+SECTION 9 — Frontend ↔ Backend Flow
+---------------------------------------------------------
+Sequence Diagram for BUY flow:
+
+User      React Form       Axios       Express       MongoDB
+ │            │              │            │             │
+ ├─ Type qty ─►              │            │             │
+ ├─ Click Buy─►              │            │             │
+ │            ├─ POST /buy ──►            │             │
+ │            │              ├─ Validate ─►             │
+ │            │              │            ├─ Update DB ─►
+ │            │              │            ◄─ Success ───┤
+ │            ◄─ 201 OK ─────┤            │             │
+ ├─ Show Msg ◄┤              │            │             │
+ │            ├─ refresh()   │            │             │
+ │            ├─ GET /portfl.►            │             │
+
+SECTION 10 — Real-Time Architecture
+---------------------------------------------------------
+WebSockets provide full-duplex, persistent communication over a single TCP connection, unlike REST which requires a new HTTP request for every interaction. 
+Socket.io is a library that wraps WebSockets, providing automatic reconnections, fallbacks, and room-based broadcasting.
+In InvestLab, REST is used for transactional data (buying/selling) because it is synchronous and guarantees success/failure states. WebSockets are used for market prices because they require high-frequency, low-latency continuous streaming.
+
+SECTION 11 — Live Price Pipeline
+---------------------------------------------------------
+1. Finnhub (External): Pushes raw JSON trade data to our backend via WebSocket.
+2. finnhubService.js: Parses the data, caches the latest price, and emits a Node.js `EventEmitter` event.
+3. marketDataGateway.js: Listens to the emitter and publishes the data to Redis Pub/Sub.
+4. server.js: Listens to Redis and broadcasts `io.emit('priceUpdate')` to all connected frontend clients.
+5. useMarketPrices.js: Receives the Socket.io event and updates React state.
+6. React UI: Re-renders the Watchlist and HoldingsTable instantly.
+
+SECTION 12 — State Management
+---------------------------------------------------------
+Local State (`useState`): Used in components for UI-specific data (e.g., input values in forms).
+Hook-based State: We created custom hooks (`usePortfolio`) to encapsulate state and share it via props from a top-level parent (`InvestLabPage`).
+Why not Redux? Redux introduces significant boilerplate. Since InvestLab data is mostly server-state (needs to be fetched and mutated on the server), simple custom hooks + prop drilling (1 level deep) is much more efficient and maintainable.
+
+SECTION 13 — Error Handling
+---------------------------------------------------------
+API Failures: Wrapped in `try/catch`. The `catch` block reads `err.response?.data?.message` (provided by Express) and sets it to local state, rendering an error banner in the UI.
+Socket Failures: Socket.io automatically attempts to reconnect. The hook tracks a `connected` boolean.
+Validation: Forms disable the submit button if inputs are empty or quantities are negative.
+
+SECTION 14 — CSS Architecture
+---------------------------------------------------------
+Used `investlab.css` to isolate styles and prevent leaking into other BudgetBuddy pages.
+Uses CSS Grid for the dashboard layout (sidebar vs main content) and Flexbox for alignment inside cards.
+Follows the existing green/white design language of BudgetBuddy to maintain brand consistency.
+
+SECTION 15 — Database Concepts Referenced
+---------------------------------------------------------
+Portfolio Model: Stores `userId`, `cashBalance`, and an array of `holdings` (embedded subdocuments).
+Trade Model: Stores individual transaction logs.
+The frontend consumes this by rendering `portfolio.cashBalance` and mapping over `portfolio.holdings`.
+
+SECTION 16 — System Design Concepts
+---------------------------------------------------------
+Separation of Concerns: Hooks handle data logic; Components handle UI.
+Event-Driven Architecture: Finnhub pushes events -> backend reacts -> frontend reacts. The system does not waste resources polling.
+API Layering: The frontend doesn't talk to the DB; it talks to Express controllers, which talk to services, which talk to Mongoose.
+
+SECTION 17 — Design Decisions
+---------------------------------------------------------
+Why Socket.io? It handles edge cases like dropped connections and CORS effortlessly compared to native WebSockets.
+Why separate InvestLab components? Keeps the codebase modular. If InvestLab breaks, the core BudgetBuddy expense tracker remains unaffected.
+Why keep routing unchanged? By putting it under `/stocks` and inside the `<MainLayout>`, the user experiences a seamless Single Page Application (SPA) feel without full page reloads.
+
+SECTION 18 — Resume Talking Points
+---------------------------------------------------------
+30-second explanation:
+"I built a real-time paper trading simulator called InvestLab. It integrates with Finnhub via WebSockets to stream live market data to a React frontend, allowing users to practice trading stocks using virtual cash managed by a Node/Express backend."
+
+1-minute explanation:
+"In my BudgetBuddy app, I engineered a full-stack investing module. The backend connects to Finnhub's WebSocket to ingest live market trades, buffers them in Redis, and streams them to the React frontend via Socket.io. I built custom React hooks to manage the WebSocket lifecycle and REST API interactions securely using JWTs. Users can execute trades, track real-time P/L, and view their portfolio performance."
+
+SECTION 19 — Possible Interview Questions
+---------------------------------------------------------
+Q: How did you handle the high frequency of WebSocket updates in React?
+A: By utilizing functional state updates (`setPrices(prev => {...})`) to prevent stale closures, and mapping the data carefully to avoid triggering massive DOM reflows unnecessarily.
+
+Q: What happens if the Finnhub API goes down?
+A: The backend implements exponential backoff for reconnections. To ensure the frontend doesn't break, I implemented a simulated fallback generator on the backend that emits small randomized price ticks when the market is closed or the connection drops.
+
+Q: Why didn't you use Redux for the prices?
+A: Stock prices change multiple times per second. Pumping that much volatile data through Redux reducers would cause massive overhead. Local hook state passed directly to the necessary components is much more performant.
+
+SECTION 20 — HR + Project Questions
+---------------------------------------------------------
+Q: Why did you build InvestLab?
+A: Budgeting apps tell you how to save, but rarely what to do with those savings. I wanted to build a feature that bridges the gap between saving money and building wealth by providing a risk-free educational environment.
+
+Q: What was the biggest challenge?
+A: Synchronizing the WebSocket data with the REST API data. Ensuring that when a user buys a stock, the HTTP request completes and immediately fetches the new portfolio state, while the live prices continue ticking in the background without interrupting the UI.
+=========================================================

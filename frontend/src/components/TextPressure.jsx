@@ -1,10 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+// Component ported from https://codepen.io/JuanFuentes/full/rgXKGQ
+
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+
+const dist = (a, b) => {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+};
+
+const getAttr = (distance, maxDist, minVal, maxVal) => {
+  const val = maxVal - Math.abs((maxVal * distance) / maxDist);
+  return Math.max(minVal, val + minVal);
+};
+
+const debounce = (func, delay) => {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func.apply(this, args);
+    }, delay);
+  };
+};
 
 const TextPressure = ({
   text = 'Compressa',
-  fontFamily = 'Compressa VF',
-  // This font is just an example, you should not use it in commercial projects.
-  fontUrl = 'https://res.cloudinary.com/dr6lvwubh/raw/upload/v1529908256/CompressaPRO-GX.woff2',
+  fontFamily = 'Roboto Flex',
+  fontUrl = 'https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap',
 
   width = true,
   weight = true,
@@ -19,8 +41,7 @@ const TextPressure = ({
   strokeColor = '#FF0000',
   className = '',
 
-  minFontSize = 100,
-
+  minFontSize = 24
 }) => {
   const containerRef = useRef(null);
   const titleRef = useRef(null);
@@ -35,25 +56,19 @@ const TextPressure = ({
 
   const chars = text.split('');
 
-  const dist = (a, b) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
   useEffect(() => {
-    const handleMouseMove = (e) => {
+    const handleMouseMove = e => {
       cursorRef.current.x = e.clientX;
       cursorRef.current.y = e.clientY;
     };
-    const handleTouchMove = (e) => {
+    const handleTouchMove = e => {
       const t = e.touches[0];
       cursorRef.current.x = t.clientX;
       cursorRef.current.y = t.clientY;
     };
 
     window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
 
     if (containerRef.current) {
       const { left, top, width, height } = containerRef.current.getBoundingClientRect();
@@ -69,7 +84,7 @@ const TextPressure = ({
     };
   }, []);
 
-  const setSize = () => {
+  const setSize = useCallback(() => {
     if (!containerRef.current || !titleRef.current) return;
 
     const { width: containerW, height: containerH } = containerRef.current.getBoundingClientRect();
@@ -91,14 +106,14 @@ const TextPressure = ({
         setLineHeight(yRatio);
       }
     });
-  };
+  }, [chars.length, minFontSize, scale]);
 
   useEffect(() => {
-    setSize();
-    window.addEventListener('resize', setSize);
-    return () => window.removeEventListener('resize', setSize);
-    // eslint-disable-next-line
-  }, [scale, text]);
+    const debouncedSetSize = debounce(setSize, 100);
+    debouncedSetSize();
+    window.addEventListener('resize', debouncedSetSize);
+    return () => window.removeEventListener('resize', debouncedSetSize);
+  }, [setSize]);
 
   useEffect(() => {
     let rafId;
@@ -110,29 +125,30 @@ const TextPressure = ({
         const titleRect = titleRef.current.getBoundingClientRect();
         const maxDist = titleRect.width / 2;
 
-        spansRef.current.forEach((span) => {
+        spansRef.current.forEach(span => {
           if (!span) return;
 
           const rect = span.getBoundingClientRect();
           const charCenter = {
             x: rect.x + rect.width / 2,
-            y: rect.y + rect.height / 2,
+            y: rect.y + rect.height / 2
           };
 
           const d = dist(mouseRef.current, charCenter);
 
-          const getAttr = (distance, minVal, maxVal) => {
-            const val = maxVal - Math.abs((maxVal * distance) / maxDist);
-            return Math.max(minVal, val + minVal);
-          };
+          const wdth = width ? Math.floor(getAttr(d, maxDist, 5, 200)) : 100;
+          const wght = weight ? Math.floor(getAttr(d, maxDist, 100, 900)) : 400;
+          const italVal = italic ? getAttr(d, maxDist, 0, 1).toFixed(2) : 0;
+          const alphaVal = alpha ? getAttr(d, maxDist, 0, 1).toFixed(2) : 1;
 
-          const wdth = width ? Math.floor(getAttr(d, 5, 200)) : 100;
-          const wght = weight ? Math.floor(getAttr(d, 100, 900)) : 400;
-          const italVal = italic ? getAttr(d, 0, 1).toFixed(2) : 0;
-          const alphaVal = alpha ? getAttr(d, 0, 1).toFixed(2) : 1;
+          const newFontVariationSettings = `'wght' ${wght}, 'wdth' ${wdth}, 'ital' ${italVal}`;
 
-          span.style.opacity = alphaVal;
-          span.style.fontVariationSettings = `'wght' ${wght}, 'wdth' ${wdth}, 'ital' ${italVal}`;
+          if (span.style.fontVariationSettings !== newFontVariationSettings) {
+            span.style.fontVariationSettings = newFontVariationSettings;
+          }
+          if (alpha && span.style.opacity !== alphaVal) {
+            span.style.opacity = alphaVal;
+          }
         });
       }
 
@@ -141,28 +157,12 @@ const TextPressure = ({
 
     animate();
     return () => cancelAnimationFrame(rafId);
-  }, [width, weight, italic, alpha, chars.length]);
+  }, [width, weight, italic, alpha]);
 
-  const dynamicClassName = [className, flex ? 'flex' : '', stroke ? 'stroke' : '']
-    .filter(Boolean)
-    .join(' ');
-
-  return (
-    <div
-      ref={containerRef}
-      style={{
-        position: 'relative',
-        width: '100%',
-        height: '100%',
-        background: 'transparent',
-      }}
-    >
+  const styleElement = useMemo(() => {
+    return (
       <style>{`
-        @font-face {
-          font-family: '${fontFamily}';
-          src: url('${fontUrl}');
-          font-style: normal;
-        }
+        @import url('${fontUrl}');
 
         .flex {
           display: flex;
@@ -188,7 +188,22 @@ const TextPressure = ({
           color: ${textColor};
         }
       `}</style>
+    );
+  }, [fontFamily, fontUrl, textColor, strokeColor]);
 
+  const dynamicClassName = [className, flex ? 'flex' : '', stroke ? 'stroke' : ''].filter(Boolean).join(' ');
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        background: 'transparent'
+      }}
+    >
+      {styleElement}
       <h1
         ref={titleRef}
         className={`text-pressure-title ${dynamicClassName}`}
@@ -204,13 +219,13 @@ const TextPressure = ({
           userSelect: 'none',
           whiteSpace: 'nowrap',
           fontWeight: 100,
-          width: '100%',
+          width: '100%'
         }}
       >
         {chars.map((char, i) => (
           <span
             key={i}
-            ref={(el) => (spansRef.current[i] = el)}
+            ref={el => (spansRef.current[i] = el)}
             data-char={char}
             style={{
               display: 'inline-block',

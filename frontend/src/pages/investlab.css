@@ -1,0 +1,298 @@
+/* frontend/src/pages/investlab.css */
+.investlab-container {
+  padding: 110px 32px 64px 32px; /* Top (navbar + 30px), Right, Bottom, Left */
+  min-height: 100vh;
+  background: #fcfdfa;
+  color: #333;
+  font-family: 'Poppins', sans-serif;
+}
+
+.investlab-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+@media (max-width: 1024px) {
+  .investlab-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.investlab-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f0f0f0;
+}
+
+/* Typography styles for InvestLab */
+.investlab-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2d5016;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.investlab-subtitle {
+  font-size: 0.9rem;
+  color: #666;
+  margin-bottom: 16px;
+}
+
+.investlab-metric-title {
+  font-size: 0.85rem;
+  color: #888;
+  font-weight: 500;
+}
+
+.investlab-metric-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #2d5016;
+  margin: 4px 0;
+}
+
+/* Sections */
+.investlab-hero-content {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.investlab-hero-stat-card {
+  background: #f4f8ef;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #e0ebcc;
+}
+
+/* Metrics Section */
+.investlab-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .investlab-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .investlab-hero-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+.investlab-metrics-grid .investlab-card {
+  padding: 20px;
+}
+
+/* Table */
+.investlab-table-container {
+  overflow-x: auto;
+}
+
+.investlab-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.investlab-table th {
+  padding: 12px 16px;
+  color: #888;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-bottom: 1px solid #eee;
+}
+
+.investlab-table td {
+  padding: 16px;
+  vertical-align: middle;
+  border-bottom: 1px solid #f9f9f9;
+  font-size: 0.95rem;
+}
+
+/* Ticker Symbol Avatar */
+.ticker-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #f0f7e6;
+  color: #7cb342;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-right: 12px;
+}
+
+.ticker-info {
+  display: flex;
+  align-items: center;
+}
+
+.ticker-name {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+/* Buttons */
+.btn-invest {
+  background: #7cb342;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.2s;
+}
+
+.btn-invest:hover {
+  background: #689f38;
+}
+
+.btn-invest:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.btn-sell {
+  background: #7cb342;
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-sell:hover {
+  background: #689f38;
+}
+
+/* Progress bar */
+.progress-container {
+  width: 100%;
+  background: #eee;
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: #2d5016;
+  border-radius: 4px;
+}
+
+/* Watchlist Grid */
+.watchlist-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1024px) {
+  .watchlist-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .watchlist-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.watchlist-card {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Trade History */
+.trade-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.trade-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.trade-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7cb342;
+  margin-top: 6px;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.trade-dot.sell {
+  background: #e53935;
+}
+
+/* Inputs */
+.invest-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+
+.invest-input:focus {
+  border-color: #7cb342;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+}
+
+.text-positive { color: #2e7d32; }
+.text-negative { color: #c62828; }

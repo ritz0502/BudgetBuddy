@@ -10,12 +10,18 @@ const {
   deleteTransaction,
   getMonthlySummary,
   getMonthlyOverview,
+  getSubscriptions,
+  cancelSubscription,
 } = require('../controllers/transactionController');
 
-// IMPORTANT: /summary and /monthly-overview MUST be registered before /:id
+// IMPORTANT: /summary, /monthly-overview, /subscriptions/* MUST be registered before /:id
 // to prevent Express treating them as an id param
 router.get('/summary', protect, getMonthlySummary);
 router.get('/monthly-overview', protect, getMonthlyOverview);
+
+// Subscription routes
+router.get('/subscriptions', protect, getSubscriptions);
+router.patch('/subscriptions/cancel', protect, cancelSubscription);
 
 router.get('/', protect, getTransactions);
 router.post('/', protect, upload.single('receipt'), createTransaction);

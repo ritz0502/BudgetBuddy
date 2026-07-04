@@ -1,5 +1,5 @@
 {
-  "watch": ["controllers", "routes", "models", "server.js"],
+  "watch": ["controllers", "routes", "models", "services", "config", "middleware", "server.js"],
     "ignore": ["node_modules"],
       "ext": "js,json"
 }

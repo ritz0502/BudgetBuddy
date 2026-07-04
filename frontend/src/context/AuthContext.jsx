@@ -1,5 +1,5 @@
 // frontend/src/context/AuthContext.jsx
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useLayoutEffect } from "react";
 import axios from "axios";
 
 const AuthContext = createContext();
@@ -29,6 +29,33 @@ export const AuthProvider = ({ children }) => {
       }
     };
     restoreSession();
+  }, []);
+
+  // ── Axios Interceptor for 401 Refresh ─────────────────────────────────────────
+  useLayoutEffect(() => {
+    const resInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config;
+        if (error.response?.status === 401 && !originalRequest._retry && originalRequest.url !== '/api/auth/refresh' && originalRequest.url !== '/api/auth/login') {
+          originalRequest._retry = true;
+          try {
+            const { data } = await axios.post('/api/auth/refresh', {}, { withCredentials: true });
+            setUser((prev) => ({ ...prev, token: data.token }));
+            // Set the new token in the retry request
+            if (originalRequest.headers.Authorization) {
+              originalRequest.headers.Authorization = `Bearer ${data.token}`;
+            }
+            return axios(originalRequest);
+          } catch (refreshError) {
+             setUser(null);
+             return Promise.reject(refreshError);
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(resInterceptor);
   }, []);
 
   // ── login: store access token in memory only ────────────────────────────────

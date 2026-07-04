@@ -15,7 +15,8 @@ const userSchema = mongoose.Schema({
       xpEarned: Number,
       completedAt: { type: Date, default: Date.now }
     }
-  ]
+  ],
+  bookmarkedScholarships: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Scholarship' }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import Wallet from './Wallet';
+import NotificationBell from './NotificationBell';
 import { useAuth } from '../context/AuthContext';
 
 const Navbar = () => {
@@ -21,7 +22,7 @@ const Navbar = () => {
   const navItems = [
     { name: 'Dashboard', path: '/dashboard' },
     { name: 'Tracker', path: '/tracker' },
-    { name: 'Stocks', path: '/stocks' },
+    { name: 'InvestLab', path: '/stocks' },
     { name: 'Quizzes', path: '/quizzes' },
     { name: 'Scholarships', path: '/scholarships' },
   ];
@@ -50,6 +51,7 @@ const Navbar = () => {
           </ul>
 
           <div className="navbar-actions">
+            {user && <NotificationBell />}
             {user ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 {/* Avatar circle */}

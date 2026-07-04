@@ -1,5 +1,6 @@
 // backend/controllers/authController.js
 const User = require('../models/User');
+const Portfolio = require('../models/Portfolio');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -40,6 +41,10 @@ const signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({ name, email, password: hashedPassword });
+
+    // Auto-provision InvestLab paper trading portfolio ($10,000)
+    Portfolio.create({ userId: user._id })
+      .catch((err) => console.error('[INVESTLAB] Portfolio auto-create failed:', err.message));
 
     if (user) {
       const accessToken = generateAccessToken(user._id);

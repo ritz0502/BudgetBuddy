@@ -1,7 +1,11 @@
 // backend/controllers/transactionController.js
 const Transaction = require('../models/Transaction');
 const Budget = require('../models/Budget');
+const CancelledSubscription = require('../models/CancelledSubscription');
 const redis = require('../config/redis');
+const { extractReceiptData } = require('../services/ocrService');
+const { detectSubscriptions } = require('../services/subscriptionService');
+const { checkBudgetAlerts } = require('../services/alertService');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -16,6 +20,11 @@ const invalidateSummaryCache = async (userId, date) => {
 /** Delete the monthly-overview cache for a user */
 const invalidateOverviewCache = async (userId) => {
   await redis.del(`overview:${userId}`);
+};
+
+/** Delete the subscriptions cache for a user */
+const invalidateSubscriptionsCache = async (userId) => {
+  await redis.del(`subscriptions:${userId}`);
 };
 
 // ── POST /api/transactions ────────────────────────────────────────────────────
@@ -39,11 +48,48 @@ const createTransaction = async (req, res) => {
       receiptUrl,
     });
 
+    let ocrData = null;
+    if (receiptUrl) {
+      console.log('[CTRL] Receipt URL found, calling OCR:', receiptUrl);
+      ocrData = await extractReceiptData(receiptUrl);
+      console.log('[CTRL] OCR returned:', JSON.stringify(ocrData ? { amount: ocrData.amount, merchant: ocrData.merchant, date: ocrData.date, confidence: ocrData.confidence } : null));
+      if (ocrData) {
+        let changed = false;
+        if (ocrData.amount) {
+          console.log('[CTRL] Updating amount from', transaction.amount, 'to', ocrData.amount);
+          transaction.amount = ocrData.amount;
+          changed = true;
+        }
+        if (ocrData.merchant) {
+          transaction.description = ocrData.merchant;
+          changed = true;
+        }
+        if (ocrData.date) {
+          const d = new Date(ocrData.date);
+          if (!isNaN(d.valueOf())) {
+            transaction.date = d;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await transaction.save();
+          console.log('[CTRL] Transaction saved with OCR data. Amount:', transaction.amount);
+        }
+      }
+    }
+
     // Invalidate caches
     await invalidateSummaryCache(req.user._id, transaction.date);
     await invalidateOverviewCache(req.user._id);
+    await invalidateSubscriptionsCache(req.user._id);
+    await redis.del(`predict:${req.user._id}`);
 
-    res.status(201).json(transaction);
+    // Fire budget alerts check non-blocking (fire-and-forget)
+    const txDate = new Date(transaction.date);
+    checkBudgetAlerts(req.user._id, txDate.getMonth() + 1, txDate.getFullYear())
+      .catch((err) => console.error('[ALERT] checkBudgetAlerts (create) error:', err));
+
+    res.status(201).json({ transaction, ocrData });
   } catch (err) {
     console.error('createTransaction error:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -94,7 +140,7 @@ const updateTransaction = async (req, res) => {
     }
 
     const oldDate = transaction.date;
-    const { type, amount, category, description, date } = req.body;
+    const { type, amount, category, description, date, removeReceipt } = req.body;
 
     if (type) transaction.type = type;
     if (amount !== undefined) transaction.amount = Number(amount);
@@ -102,6 +148,7 @@ const updateTransaction = async (req, res) => {
     if (description !== undefined) transaction.description = description;
     if (date) transaction.date = new Date(date);
     if (req.file) transaction.receiptUrl = req.file.path;
+    else if (removeReceipt === 'true') transaction.receiptUrl = null;
 
     await transaction.save();
 
@@ -109,6 +156,13 @@ const updateTransaction = async (req, res) => {
     await invalidateSummaryCache(req.user._id, oldDate);
     await invalidateSummaryCache(req.user._id, transaction.date);
     await invalidateOverviewCache(req.user._id);
+    await invalidateSubscriptionsCache(req.user._id);
+    await redis.del(`predict:${req.user._id}`);
+
+    // Fire budget alerts check non-blocking (fire-and-forget)
+    const txDateU = new Date(transaction.date);
+    checkBudgetAlerts(req.user._id, txDateU.getMonth() + 1, txDateU.getFullYear())
+      .catch((err) => console.error('[ALERT] checkBudgetAlerts (update) error:', err));
 
     res.json(transaction);
   } catch (err) {
@@ -135,6 +189,7 @@ const deleteTransaction = async (req, res) => {
     // Invalidate caches
     await invalidateSummaryCache(req.user._id, txDate);
     await invalidateOverviewCache(req.user._id);
+    await invalidateSubscriptionsCache(req.user._id);
 
     res.json({ message: 'Transaction deleted' });
   } catch (err) {
@@ -344,6 +399,54 @@ const getMonthlyOverview = async (req, res) => {
   }
 };
 
+// ── GET /api/transactions/subscriptions ──────────────────────────────────────
+const getSubscriptions = async (req, res) => {
+  try {
+    const cacheKey = `subscriptions:${req.user._id}`;
+
+    // Check Redis cache (TTL 24h)
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+
+    const result = await detectSubscriptions(req.user._id);
+
+    await redis.setex(cacheKey, 86400, JSON.stringify(result));
+
+    res.json(result);
+  } catch (err) {
+    console.error('getSubscriptions error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// ── PATCH /api/transactions/subscriptions/cancel ─────────────────────────────
+const cancelSubscription = async (req, res) => {
+  try {
+    const { description } = req.body;
+
+    if (!description) {
+      return res.status(400).json({ message: 'description is required' });
+    }
+
+    // Upsert: avoid duplicate cancelled records for the same description+user
+    await CancelledSubscription.findOneAndUpdate(
+      { userId: req.user._id, description: description.toLowerCase().trim() },
+      { userId: req.user._id, description: description.toLowerCase().trim(), cancelledAt: new Date() },
+      { upsert: true, new: true }
+    );
+
+    // Invalidate subscriptions cache so next GET reflects the cancellation
+    await invalidateSubscriptionsCache(req.user._id);
+
+    res.json({ message: 'Subscription marked as cancelled' });
+  } catch (err) {
+    console.error('cancelSubscription error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
 module.exports = {
   createTransaction,
   getTransactions,
@@ -351,4 +454,6 @@ module.exports = {
   deleteTransaction,
   getMonthlySummary,
   getMonthlyOverview,
+  getSubscriptions,
+  cancelSubscription,
 };

@@ -109,19 +109,20 @@ const HomePage = () => {
         <div className="container">
           <div className="hero-content">
             <div className="hero-text">
-              {/* Replace the heading and paragraph with the TextPressure component */}
-              <TextPressure
-                text="Budget Buddy"
-                flex={true}
-                alpha={false}
-                stroke={false}
-                width={true}
-                weight={true}
-                italic={true}
-                textColor="#2d5016" // Use your heading color
-                strokeColor="#ff0000"
-                minFontSize={100}
-              />
+              <div className="hero-heading-wrapper">
+                <TextPressure
+                  text="Budget Buddy"
+                  flex
+                  alpha={false}
+                  stroke={false}
+                  width
+                  weight
+                  italic
+                  textColor="#2d5016"
+                  strokeColor="#5227FF"
+                  minFontSize={36}
+                />
+              </div>
               <p>
                 Your ultimate financial companion designed to help students
                 manage their money wisely.

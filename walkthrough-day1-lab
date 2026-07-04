@@ -1,0 +1,211 @@
+# InvestLab Day 1 — Walkthrough
+
+## Summary
+
+Built the complete InvestLab backend foundation: real-time market infrastructure, portfolio models, trade tracking, readiness scoring engine, Redis Pub/Sub architecture, and Socket.io integration. **10 new files created, 2 existing files modified. Zero existing functionality touched.**
+
+---
+
+## Architecture Flow (Verified Working)
+
+```mermaid
+graph LR
+    A["Finnhub WebSocket"] -->|trade data| B["finnhubService"]
+    B -->|EventEmitter| C["marketDataGateway"]
+    C -->|PUBLISH| D["Redis Pub/Sub<br/>market:prices"]
+    D -->|SUBSCRIBE| E["server.js bridge"]
+    E -->|emit| F["Socket.io"]
+    F -->|priceUpdate| G["React (future)"]
+
+    style D fill:#dc3545,stroke:#fff,color:#fff
+    style F fill:#0d6efd,stroke:#fff,color:#fff
+```
+
+---
+
+## Files Created
+
+### Models (3 files)
+
+| File | Purpose |
+|------|---------|
+| [Portfolio.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/models/Portfolio.js) | User portfolio with $10k cash default, holdings with weighted avg buy price |
+| [Trade.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/models/Trade.js) | Buy/sell trade records with compound index for efficient user queries |
+| [PortfolioSnapshot.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/models/PortfolioSnapshot.js) | Point-in-time portfolio value snapshots (for future BullMQ analytics job) |
+
+### Config (1 file)
+
+| File | Purpose |
+|------|---------|
+| [redisPubSub.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/config/redisPubSub.js) | Dedicated publisher + subscriber ioredis instances for Pub/Sub (separate from cache client) |
+
+### Services (4 files)
+
+| File | Purpose |
+|------|---------|
+| [finnhubService.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/services/finnhubService.js) | Finnhub WebSocket client, latestPrices cache, auto-reconnect with exponential backoff |
+| [marketDataGateway.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/services/marketDataGateway.js) | EventEmitter → Redis Pub/Sub bridge (decouples ingestion from delivery) |
+| [readinessEngine.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/services/readinessEngine.js) | Pure scoring engine: 40% savings + 30% budget + 20% subscriptions + 10% consistency |
+| [portfolioValuationService.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/services/portfolioValuationService.js) | Portfolio valuation with per-holding P&L, reusable by controllers and future jobs |
+
+### Controller & Routes (2 files)
+
+| File | Purpose |
+|------|---------|
+| [investlabController.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/controllers/investlabController.js) | Thin controllers for readiness, portfolio, buy, sell, trades |
+| [investlabRoutes.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/routes/investlabRoutes.js) | 5 routes, all protected by existing JWT middleware |
+
+---
+
+## Files Modified
+
+### [server.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/server.js)
+- Upgraded `app.listen()` → `http.createServer(app)` + `server.listen()` (Socket.io requirement)
+- Added Socket.io initialization with CORS config
+- Added Redis Pub/Sub → Socket.io bridge (`market:prices` channel → `priceUpdate` event)
+- Added `priceSnapshot` emit on client connection
+- Registered `/api/investlab` routes
+- Started Finnhub and MarketDataGateway on server boot
+
+### [authController.js](file:///d:/Desktop/projects/BudgetBuddy/BudgetBuddy/backend/controllers/authController.js)
+- Added `Portfolio` import
+- Added fire-and-forget `Portfolio.create()` after user signup (never blocks auth flow)
+
+---
+
+## API Endpoints
+
+All endpoints require `Authorization: Bearer <JWT>` header.
+
+| Method | Path | Status |
+|--------|------|--------|
+| GET | `/api/investlab/readiness` | ✅ Verified |
+| GET | `/api/investlab/portfolio` | ✅ Verified |
+| POST | `/api/investlab/buy` | ✅ Verified |
+| POST | `/api/investlab/sell` | ✅ Verified |
+| GET | `/api/investlab/trades` | ✅ Verified |
+
+---
+
+## Test Results
+
+### Readiness Score (new user, no financial data)
+```json
+{
+  "score": 55,
+  "status": "Improving",
+  "breakdown": {
+    "savingsRate":        { "weighted": 0   },
+    "budgetAdherence":    { "weighted": 30  },
+    "subscriptionBurden": { "weighted": 20  },
+    "spendingConsistency":{ "weighted": 5   }
+  }
+}
+```
+
+### Buy 5 AAPL
+```json
+{
+  "message": "Bought 5 shares of AAPL at $300.26",
+  "trade": { "type": "buy", "quantity": 5, "total": 1501.3 },
+  "cashBalance": 8498.7
+}
+```
+
+### Sell 2 AAPL
+```json
+{
+  "message": "Sold 2 shares of AAPL at $300.31",
+  "trade": { "type": "sell", "quantity": 2, "total": 600.62 },
+  "cashBalance": 9099.32
+}
+```
+
+### Portfolio (after trades)
+```json
+{
+  "cashBalance": 9099.32,
+  "holdings": [{ "symbol": "AAPL", "quantity": 3, "avgBuyPrice": 300.26, "currentPrice": 300.26 }],
+  "portfolioValue": 10000.1,
+  "totalPnL": 0
+}
+```
+
+### Trades (paginated)
+```json
+{
+  "trades": [
+    { "type": "sell", "symbol": "AAPL", "quantity": 2, "price": 300.31 },
+    { "type": "buy",  "symbol": "AAPL", "quantity": 5, "price": 300.26 }
+  ],
+  "pagination": { "page": 1, "totalCount": 2, "totalPages": 1 }
+}
+```
+
+### Redis Pub/Sub (live market data flowing)
+```
+market:prices → {"type":"priceUpdate","data":{"NVDA":{"price":209.14}}}
+market:prices → {"type":"priceUpdate","data":{"MSFT":{"price":391.42}}}
+market:prices → {"type":"priceUpdate","data":{"AMZN":{"price":245.80}}}
+market:prices → {"type":"priceUpdate","data":{"TSLA":{"price":404.67}}}
+market:prices → {"type":"priceUpdate","data":{"AAPL":{"price":300.28}}}
+market:prices → {"type":"priceUpdate","data":{"GOOGL":{"price":370.43}}}
+```
+
+---
+
+## Redis Pub/Sub Flow
+
+```
+1. Finnhub WebSocket sends trade data for AAPL, MSFT, NVDA, GOOGL, AMZN, TSLA
+2. finnhubService parses trades, updates latestPrices Map, emits 'priceUpdate' via EventEmitter
+3. marketDataGateway listens to EventEmitter, PUBLISHES to Redis channel 'market:prices'
+4. server.js Redis subscriber receives the message
+5. server.js broadcasts to all Socket.io clients via io.emit('priceUpdate', data)
+6. On new Socket.io connection, server emits 'priceSnapshot' with all cached prices
+```
+
+> [!NOTE]
+> Redis Pub/Sub is used as the intermediary layer (not direct Finnhub → Socket.io) for future scalability. This allows multiple server instances to share market data through Redis, and enables future consumers (BullMQ workers, analytics pipelines) to subscribe to the same channel.
+
+---
+
+## Socket.io Testing
+
+```javascript
+// In browser console or Node.js:
+const { io } = require("socket.io-client");
+const socket = io("http://localhost:5000");
+
+socket.on("connect", () => console.log("Connected:", socket.id));
+socket.on("priceSnapshot", (data) => console.log("Snapshot:", data));
+socket.on("priceUpdate", (data) => console.log("Update:", data));
+```
+
+**Events:**
+- `priceSnapshot` — emitted once on connection with all cached prices
+- `priceUpdate` — emitted continuously with real-time price changes
+
+---
+
+## Assumptions
+
+1. Finnhub free tier API key is used (supports WebSocket + up to 50 symbols)
+2. Paper trading only — $10,000 simulated cash, no real money
+3. Existing users get portfolio auto-created on first `/portfolio` access (lazy init)
+4. New users get portfolio auto-created on signup (fire-and-forget)
+5. PortfolioSnapshot model is created but not yet populated (for future BullMQ job)
+6. Market hours don't affect API availability — prices are cached from last received trade
+7. No express-validator on InvestLab routes yet (basic validation in controllers)
+
+---
+
+## Future BullMQ Integration Points
+
+| Job | Hook Point | What It Does |
+|-----|-----------|--------------|
+| **Portfolio Snapshot** | `portfolioValuationService.valuatePortfolio()` → `PortfolioSnapshot.create()` | Periodic (e.g., every 15 min) portfolio value snapshots |
+| **Readiness Recalc** | `readinessEngine.calculateReadiness()` | Triggered after expense/budget changes via transaction hooks |
+| **AI Advisor** | Consumes readiness score + portfolio valuation as input context | Pure input/output, no coupling |
+| **Achievement/XP** | Post-save hook on Trade model | Award XP for first trade, diversification, etc. |
+| **Real-time P&L Push** | `priceUpdate` events + user holdings | Per-user Socket.io rooms for personalized updates |

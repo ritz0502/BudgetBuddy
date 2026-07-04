@@ -92,6 +92,15 @@ const TransactionList = ({ transactions, loading, onDelete, setEditingTransactio
               <div className="tx-info">
                 <div className="tx-description">
                   {tx.description || tx.category}
+                  {tx.receiptUrl && (
+                    <span
+                      style={{ marginLeft: '8px', cursor: 'pointer' }}
+                      onClick={() => window.open(tx.receiptUrl, '_blank')}
+                      title="View Receipt"
+                    >
+                      📎
+                    </span>
+                  )}
                 </div>
                 <div className="tx-meta">
                   {fmtDate(tx.date)}

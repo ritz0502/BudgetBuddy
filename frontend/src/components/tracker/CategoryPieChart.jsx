@@ -6,6 +6,7 @@ import {
 import { Edit2, Save, X, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useEffect } from 'react';
 
 const PIE_COLORS = ['#2d5016', '#4a7c1f', '#7cb342', '#a5d66a', '#c5e1a5', '#8bc34a', '#aed581', '#c5e1a5', '#dcedc8'];
 
@@ -16,6 +17,25 @@ const CategoryPieChart = ({ categoryBreakdown = [], month, year, onSuccess }) =>
   const [activeEditCategory, setActiveEditCategory] = useState(null);
   const [limitInput, setLimitInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [predictions, setPredictions] = useState([]);
+
+  useEffect(() => {
+    const fetchPredictions = async () => {
+      try {
+        const { data } = await axios.get('/api/predict', {
+          headers: { Authorization: `Bearer ${user?.token}` }
+        });
+        if (data && data.predictions) {
+          setPredictions(data.predictions);
+        }
+      } catch (err) {
+        console.error('Predictions fetch error:', err);
+      }
+    };
+    if (user) {
+      fetchPredictions();
+    }
+  }, [user]);
 
   // Total expenses is sum of all category totals
   const pieData = categoryBreakdown.filter((item) => item.total > 0);
@@ -137,6 +157,7 @@ const CategoryPieChart = ({ categoryBreakdown = [], month, year, onSuccess }) =>
               {categoryBreakdown.map((item) => {
                 const isEditing = activeEditCategory === item.category;
                 const isOver = item.percentUsed !== null && item.percentUsed > 100;
+                const prediction = predictions.find(p => p.category === item.category);
 
                 return (
                   <div key={item.category} className="budget-category-row">
@@ -147,6 +168,11 @@ const CategoryPieChart = ({ categoryBreakdown = [], month, year, onSuccess }) =>
                         {isOver && (
                           <span className="over-budget-badge">
                             <AlertTriangle size={10} /> Over budget
+                          </span>
+                        )}
+                        {!isOver && item.percentUsed !== null && item.percentUsed >= 80 && (
+                          <span className="warn-budget-icon" title={`${item.percentUsed}% of budget used`}>
+                            ⚠️
                           </span>
                         )}
                       </div>
@@ -198,6 +224,18 @@ const CategoryPieChart = ({ categoryBreakdown = [], month, year, onSuccess }) =>
                           >
                             <X size={13} />
                           </button>
+                          
+                          {prediction && (
+                            <div style={{ width: '100%', marginTop: '8px', fontSize: '0.8rem', color: '#888', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span>Predicted: {fmtAmt(prediction.predictedAmount)} next month</span>
+                              <button 
+                                onClick={() => setLimitInput(Math.round(prediction.predictedAmount).toString())}
+                                style={{ background: 'none', border: 'none', color: '#7cb342', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.8rem' }}
+                              >
+                                Use this
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <button

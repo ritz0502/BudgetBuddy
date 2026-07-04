@@ -1,0 +1,301 @@
+description,category
+Zomato,Food
+Swiggy,Food
+Swiggy order,Food
+Zomato delivery,Food
+McDonald's,Food
+Domino's Pizza,Food
+Domino's,Food
+Pizza Hut,Food
+Burger King,Food
+Starbucks,Food
+Starbucks coffee,Food
+Chaayos,Food
+Chaayos tea,Food
+Cafe Coffee Day,Food
+CCD coffee,Food
+Big Basket,Food
+BigBasket groceries,Food
+Blinkit,Food
+Blinkit delivery,Food
+Zepto,Food
+Zepto groceries,Food
+Instamart,Food
+Swiggy Instamart,Food
+Dunzo,Food
+Dunzo delivery,Food
+DMart,Food
+D-Mart shopping,Food
+Reliance Fresh,Food
+Reliance Smart,Food
+More Supermarket,Food
+More megastore,Food
+Hotel restaurant,Food
+Restaurant dinner,Food
+Dhaba lunch,Food
+Canteen food,Food
+College canteen,Food
+Mess food,Food
+Hostel mess,Food
+Tiffin service,Food
+Monthly tiffin,Food
+Grocery shopping,Food
+Grocery store,Food
+Vegetables market,Food
+Sabzi mandi,Food
+Milk delivery,Food
+Amul milk,Food
+Bread bakery,Food
+Bakery items,Food
+Haldiram's,Food
+Haldiram snacks,Food
+Subway sandwich,Food
+KFC chicken,Food
+KFC,Food
+Baskin Robbins,Food
+Ice cream parlour,Food
+Chai tapri,Food
+Tea stall,Food
+Street food,Food
+Pani puri,Food
+Biryani order,Food
+Thali meal,Food
+Lunch order,Food
+Dinner delivery,Food
+Breakfast cafe,Food
+Uber,Transport
+Uber ride,Transport
+Uber auto,Transport
+Ola,Transport
+Ola cab,Transport
+Ola auto,Transport
+Rapido,Transport
+Rapido bike,Transport
+Rapido auto,Transport
+IRCTC,Transport
+IRCTC booking,Transport
+Indian Railways,Transport
+Railway ticket,Transport
+Train ticket,Transport
+Metro card recharge,Transport
+Metro ticket,Transport
+Delhi Metro,Transport
+Mumbai Metro,Transport
+BEST Bus,Transport
+Bus ticket,Transport
+RedBus,Transport
+RedBus booking,Transport
+MakeMyTrip,Transport
+MakeMyTrip flight,Transport
+IndiGo airlines,Transport
+IndiGo flight,Transport
+Air India,Transport
+Air India ticket,Transport
+SpiceJet,Transport
+SpiceJet flight,Transport
+Vistara flight,Transport
+Petrol pump,Transport
+Fuel station,Transport
+HP petrol,Transport
+Indian Oil petrol,Transport
+Parking charges,Transport
+Parking fee,Transport
+Toll plaza,Transport
+Toll charges,Transport
+FASTag recharge,Transport
+Auto rickshaw,Transport
+Auto fare,Transport
+Rickshaw ride,Transport
+Cab fare,Transport
+Coursera,Education
+Coursera subscription,Education
+Udemy,Education
+Udemy course,Education
+BYJU's,Education
+Unacademy,Education
+Unacademy subscription,Education
+Khan Academy,Education
+Tuition fees,Education
+Tuition class,Education
+Textbook purchase,Education
+College textbook,Education
+Books stationery,Education
+Stationery shop,Education
+Library fees,Education
+Library membership,Education
+College fees,Education
+University fees,Education
+Semester fees,Education
+Exam fees,Education
+Exam registration,Education
+Notes printing,Education
+Photocopy notes,Education
+Printing charges,Education
+Online course,Education
+Skillshare,Education
+LinkedIn Learning,Education
+School supplies,Education
+Coaching class,Education
+Coaching center,Education
+Workshop registration,Education
+Netflix,Entertainment
+Netflix subscription,Entertainment
+Spotify,Entertainment
+Spotify premium,Entertainment
+Amazon Prime,Entertainment
+Amazon Prime Video,Entertainment
+Hotstar,Entertainment
+Disney+ Hotstar,Entertainment
+YouTube Premium,Entertainment
+YouTube Music,Entertainment
+BookMyShow,Entertainment
+BookMyShow movie,Entertainment
+PVR cinema,Entertainment
+PVR tickets,Entertainment
+INOX movies,Entertainment
+INOX cinema,Entertainment
+Gaming purchase,Entertainment
+PlayStation store,Entertainment
+Steam game,Entertainment
+Steam purchase,Entertainment
+Concert tickets,Entertainment
+Event booking,Entertainment
+Amusement park,Entertainment
+Movie tickets,Entertainment
+Apple Music,Entertainment
+JioCinema,Entertainment
+SonyLIV,Entertainment
+ZEE5 subscription,Entertainment
+Club membership,Entertainment
+Pharmacy,Health
+Pharmacy medicine,Health
+Chemist shop,Health
+Medical store,Health
+Doctor visit,Health
+Doctor consultation,Health
+Hospital bill,Health
+Hospital charges,Health
+Clinic visit,Health
+Apollo Pharmacy,Health
+Apollo hospital,Health
+Practo consultation,Health
+Practo doctor,Health
+Netmeds order,Health
+Netmeds medicine,Health
+1mg pharmacy,Health
+1mg order,Health
+Gym membership,Health
+Gym subscription,Health
+Fitness center,Health
+Yoga class,Health
+Yoga studio,Health
+Medicine purchase,Health
+Tablet medicine,Health
+Eye checkup,Health
+Dental clinic,Health
+Dentist visit,Health
+Lab test,Health
+Blood test,Health
+Health checkup,Health
+Myntra,Shopping
+Myntra shopping,Shopping
+Amazon order,Shopping
+Amazon shopping,Shopping
+Flipkart,Shopping
+Flipkart order,Shopping
+Meesho,Shopping
+Meesho order,Shopping
+Nykaa,Shopping
+Nykaa beauty,Shopping
+Ajio shopping,Shopping
+Ajio order,Shopping
+H&M clothing,Shopping
+H&M store,Shopping
+Zara fashion,Shopping
+Zara store,Shopping
+Clothing purchase,Shopping
+Clothes shopping,Shopping
+Shoes purchase,Shopping
+Shoe store,Shopping
+Accessories shop,Shopping
+Watch purchase,Shopping
+Bag purchase,Shopping
+Electronics store,Shopping
+Croma electronics,Shopping
+Reliance Digital,Shopping
+Mobile cover,Shopping
+Headphones purchase,Shopping
+Home decor,Shopping
+Furniture store,Shopping
+Electricity bill,Utilities
+Electricity payment,Utilities
+Water bill,Utilities
+Water charges,Utilities
+Gas cylinder,Utilities
+LPG refill,Utilities
+Piped gas bill,Utilities
+Internet bill,Utilities
+Broadband payment,Utilities
+WiFi recharge,Utilities
+Airtel recharge,Utilities
+Airtel bill,Utilities
+Jio recharge,Utilities
+Jio plan,Utilities
+Vi recharge,Utilities
+Vodafone recharge,Utilities
+BSNL recharge,Utilities
+BSNL broadband,Utilities
+Phone recharge,Utilities
+Mobile recharge,Utilities
+Mobile bill payment,Utilities
+DTH recharge,Utilities
+Tata Sky recharge,Utilities
+Newspaper subscription,Utilities
+Society maintenance,Utilities
+Rent payment,Rent
+Monthly rent,Rent
+House rent,Rent
+Apartment rent,Rent
+Flat rent,Rent
+PG accommodation,Rent
+PG charges,Rent
+Hostel fees,Rent
+Hostel accommodation,Rent
+Room rent,Rent
+Accommodation charges,Rent
+Lease payment,Rent
+Housing rent,Rent
+Salary credited,Salary
+Monthly salary,Salary
+Stipend received,Salary
+Internship stipend,Salary
+Internship salary,Salary
+Freelance payment,Salary
+Freelance income,Salary
+Consulting fee,Salary
+Consulting payment,Salary
+Part-time income,Salary
+Side hustle income,Salary
+Tutoring income,Salary
+Project payment,Salary
+Gig payment,Salary
+ATM withdrawal,Other
+ATM cash,Other
+Cash withdrawal,Other
+Bank transfer,Other
+UPI transfer,Other
+NEFT transfer,Other
+Miscellaneous,Other
+Donation,Other
+Gift purchase,Other
+Charity donation,Other
+Laundry service,Other
+Dry cleaning,Other
+Salon haircut,Other
+Barber shop,Other
+Parlour visit,Other
+Subscription box,Other
+Insurance premium,Other
+Life insurance,Other
+Pet food,Other
+Vet visit,Other

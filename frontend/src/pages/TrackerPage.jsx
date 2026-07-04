@@ -8,6 +8,7 @@ import TransactionForm from '../components/tracker/TransactionForm';
 import TransactionList from '../components/tracker/TransactionList';
 import DailySpendChart from '../components/tracker/DailySpendChart';
 import CategoryPieChart from '../components/tracker/CategoryPieChart';
+import SubscriptionDetector from '../components/tracker/SubscriptionDetector';
 import './tracker.css';
 
 const MONTH_NAMES = [
@@ -186,6 +187,9 @@ const TrackerPage = () => {
           />
           <DailySpendChart transactions={transactions} month={month} year={year} />
         </div>
+
+        {/* Subscription Detector */}
+        <SubscriptionDetector />
       </div>
     </div>
   );

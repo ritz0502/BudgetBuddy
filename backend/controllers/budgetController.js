@@ -1,6 +1,7 @@
 // backend/controllers/budgetController.js
 const Budget = require('../models/Budget');
 const redis = require('../config/redis');
+const { checkBudgetAlerts } = require('../services/alertService');
 
 // ── POST /api/budgets ─────────────────────────────────────────────────────────
 // Create or update (upsert) a budget limit for a category + month + year
@@ -37,6 +38,11 @@ const upsertBudget = async (req, res) => {
     // Invalidate Redis summary cache key for this user, month, and year
     const cacheKey = `summary:${req.user._id}:${month}:${year}`;
     await redis.del(cacheKey);
+
+    // Fire budget alerts check non-blocking — catches case where limit was set
+    // after transactions were already added
+    checkBudgetAlerts(req.user._id, Number(month), Number(year))
+      .catch((err) => console.error('[ALERT] checkBudgetAlerts (upsertBudget) error:', err));
 
     res.status(200).json(budget);
   } catch (err) {

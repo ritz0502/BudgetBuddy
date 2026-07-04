@@ -1,6 +1,6 @@
 // frontend/src/components/tracker/TransactionForm.jsx
-import React, { useState } from 'react';
-import { Paperclip } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Paperclip, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 
@@ -21,53 +21,128 @@ const TransactionForm = ({ onSuccess, editingTransaction, setEditingTransaction 
     date: today(),
   });
   const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [ocrStatus, setOcrStatus] = useState(null);
+  const [ocrFilled, setOcrFilled] = useState({});
+  const [removeReceipt, setRemoveReceipt] = useState(false);
+  const [suggestedBadge, setSuggestedBadge] = useState(null);
+
+  const suggestTimerRef = useRef(null);
+  const suggestedCategoryRef = useRef(null);
 
   // Pre-populate fields when editingTransaction changes
   React.useEffect(() => {
     if (editingTransaction) {
-      setType(editingTransaction.type || 'income');
-      setForm({
-        amount: editingTransaction.amount?.toString() || '',
-        category: editingTransaction.category || '',
-        description: editingTransaction.description || '',
-        date: editingTransaction.date ? new Date(editingTransaction.date).toISOString().split('T')[0] : today(),
-      });
-      setError('');
+      if (editingTransaction._isOcr) {
+        // Form is already set by handleSubmit for OCR flow
+      } else {
+        setType(editingTransaction.type || 'income');
+        setForm({
+          amount: editingTransaction.amount?.toString() || '',
+          category: editingTransaction.category || '',
+          description: editingTransaction.description || '',
+          date: editingTransaction.date ? new Date(editingTransaction.date).toISOString().split('T')[0] : today(),
+        });
+        setError('');
+        setOcrStatus(null);
+        setOcrFilled({});
+        setRemoveReceipt(false);
+        setFile(null);
+        setPreviewUrl(null);
+        setSuggestedBadge(null);
+        suggestedCategoryRef.current = null;
+        if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+      }
     } else {
       setForm({ amount: '', category: '', description: '', date: today() });
       setFile(null);
+      setPreviewUrl(null);
       setType('income');
       setError('');
+      setOcrStatus(null);
+      setOcrFilled({});
+      setRemoveReceipt(false);
+      setSuggestedBadge(null);
+      suggestedCategoryRef.current = null;
+      if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
     }
   }, [editingTransaction]);
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
     setError('');
+
+    if (name === 'description') {
+      if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+      
+      if (value.length < 3) {
+         setSuggestedBadge(null);
+      } else {
+        suggestTimerRef.current = setTimeout(async () => {
+          try {
+            const res = await axios.post('/api/classify', { description: value }, {
+              headers: { Authorization: `Bearer ${user?.token}` },
+              withCredentials: true,
+            });
+            const { category, confidence, fallback } = res.data;
+            if (confidence >= 0.6 && !fallback && CATEGORIES.includes(category)) {
+              setForm(prev => ({ ...prev, category }));
+              setSuggestedBadge(`${category} (${Math.round(confidence * 100)}%)`);
+              suggestedCategoryRef.current = category;
+            }
+          } catch (err) {
+            console.error('Classification error:', err);
+          }
+        }, 500);
+      }
+    } else if (name === 'category') {
+      setSuggestedBadge(null);
+      if (suggestedCategoryRef.current && suggestedCategoryRef.current !== value && form.description.trim()) {
+        axios.post('/api/classify/feedback', {
+          description: form.description.trim(),
+          suggestedCategory: suggestedCategoryRef.current,
+          actualCategory: value
+        }, {
+          headers: { Authorization: `Bearer ${user?.token}` },
+          withCredentials: true,
+        }).catch(e => console.error('Feedback error:', e));
+      }
+      suggestedCategoryRef.current = null;
+    }
   };
 
   const handleFileChange = (e) => {
-    setFile(e.target.files[0] || null);
+    const selectedFile = e.target.files[0] || null;
+    setFile(selectedFile);
+    if (selectedFile) {
+      setPreviewUrl(URL.createObjectURL(selectedFile));
+      setForm((prev) => ({ ...prev, amount: '' }));
+    } else {
+      setPreviewUrl(null);
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!form.amount || !form.category) {
+    if ((!form.amount && !file) || (!form.category && !file)) {
       setError('Amount and Category are required.');
       return;
     }
 
     const formData = new FormData();
     formData.append('type', type);
-    formData.append('amount', form.amount);
-    formData.append('category', form.category);
+    const amountToSubmit = (!form.amount && file) ? '0' : form.amount;
+    formData.append('amount', amountToSubmit);
+    formData.append('category', form.category || 'Other');
     formData.append('description', form.description);
     formData.append('date', form.date);
     if (file) formData.append('receipt', file);
+    if (removeReceipt) formData.append('removeReceipt', 'true');
 
     try {
       setSubmitting(true);
@@ -78,7 +153,7 @@ const TransactionForm = ({ onSuccess, editingTransaction, setEditingTransaction 
 
       const method = editingTransaction ? 'put' : 'post';
 
-      await axios[method](url, formData, {
+      const res = await axios[method](url, formData, {
         headers: {
           Authorization: `Bearer ${user?.token}`,
           // Do NOT set Content-Type here — axios sets it automatically
@@ -90,10 +165,66 @@ const TransactionForm = ({ onSuccess, editingTransaction, setEditingTransaction 
       if (editingTransaction) {
         setEditingTransaction(null);
       } else {
-        // Reset form (if creating)
-        setForm({ amount: '', category: '', description: '', date: today() });
-        setFile(null);
-        setType('income');
+        const resData = res.data;
+        const transaction = resData.transaction || resData;
+        const ocrData = resData.ocrData;
+
+        if (ocrData) {
+          const { amount, date, merchant, confidence } = ocrData;
+          setOcrStatus(confidence);
+          
+          let newAmount = form.amount;
+          let newDate = form.date;
+          let newDesc = form.description;
+          let newCat = form.category;
+          const filled = {};
+
+          if (amount && (!form.amount || Number(form.amount) === 0)) {
+            newAmount = amount.toString();
+            filled.amount = true;
+          }
+          if (date) {
+            newDate = date;
+            filled.date = true;
+          }
+          if (merchant) {
+            newDesc = merchant;
+            filled.description = true;
+            try {
+              const catRes = await axios.post('/api/classify', { description: merchant }, {
+                headers: { Authorization: `Bearer ${user?.token}` },
+                withCredentials: true,
+              });
+              const { category, confidence, fallback } = catRes.data;
+              if (confidence >= 0.6 && !fallback && CATEGORIES.includes(category)) {
+                newCat = category;
+                filled.category = true;
+                setSuggestedBadge(`${category} (${Math.round(confidence * 100)}%)`);
+                suggestedCategoryRef.current = category;
+              }
+            } catch (e) { /* ignore */ }
+          }
+          
+          setForm({
+            amount: newAmount,
+            category: newCat,
+            description: newDesc,
+            date: newDate
+          });
+          setOcrFilled(filled);
+          setFile(null);
+          setPreviewUrl(null);
+          setEditingTransaction({ ...transaction, _isOcr: true });
+        } else {
+          // Reset form (if creating)
+          setForm({ amount: '', category: '', description: '', date: today() });
+          setFile(null);
+          setPreviewUrl(null);
+          setType('income');
+          setSuggestedBadge(null);
+          suggestedCategoryRef.current = null;
+          if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+        }
       }
       onSuccess?.();
     } catch (err) {
@@ -106,6 +237,16 @@ const TransactionForm = ({ onSuccess, editingTransaction, setEditingTransaction 
   return (
     <div className="form-card">
       <h2>{editingTransaction ? 'Edit Transaction' : 'Add Transaction'}</h2>
+
+      {ocrStatus === 'high' || ocrStatus === 'medium' ? (
+        <div className="banner banner-success" style={{ backgroundColor: '#e6fffa', color: '#2c7a7b', padding: '10px', borderRadius: '5px', marginBottom: '15px' }}>
+          Receipt scanned! Amount, date, merchant and category have been auto-filled — please review before saving.
+        </div>
+      ) : ocrStatus === 'low' ? (
+        <div className="banner banner-warning" style={{ backgroundColor: '#fefcbf', color: '#975a16', padding: '10px', borderRadius: '5px', marginBottom: '15px' }}>
+          Receipt uploaded but we couldn't read it clearly — please fill in the details manually.
+        </div>
+      ) : null}
 
       <form onSubmit={handleSubmit}>
         {/* Type Toggle */}
@@ -137,11 +278,14 @@ const TransactionForm = ({ onSuccess, editingTransaction, setEditingTransaction 
               type="number"
               min="0"
               step="0.01"
-              placeholder="0.00"
+              placeholder={file ? 'Will extract from receipt' : '0.00'}
               value={form.amount}
               onChange={handleChange}
+              disabled={!!file}
+              style={file ? { backgroundColor: '#f0f0f0', cursor: 'not-allowed' } : {}}
             />
           </div>
+          {ocrFilled.amount && <span style={{ fontSize: '0.8rem', color: '#718096' }}>from receipt</span>}
         </div>
 
         {/* Category */}
@@ -158,6 +302,12 @@ const TransactionForm = ({ onSuccess, editingTransaction, setEditingTransaction 
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
+          {ocrFilled.category && <span style={{ fontSize: '0.8rem', color: '#718096' }}>from receipt</span>}
+          {suggestedBadge && (
+            <div className="suggested-badge">
+              ✓ Suggested: {suggestedBadge} — change if incorrect
+            </div>
+          )}
         </div>
 
         {/* Description */}
@@ -171,6 +321,7 @@ const TransactionForm = ({ onSuccess, editingTransaction, setEditingTransaction 
             value={form.description}
             onChange={handleChange}
           />
+          {ocrFilled.description && <span style={{ fontSize: '0.8rem', color: '#718096' }}>from receipt</span>}
         </div>
 
         {/* Date */}
@@ -183,20 +334,48 @@ const TransactionForm = ({ onSuccess, editingTransaction, setEditingTransaction 
             value={form.date}
             onChange={handleChange}
           />
+          {ocrFilled.date && <span style={{ fontSize: '0.8rem', color: '#718096' }}>from receipt</span>}
         </div>
 
         {/* Receipt Upload */}
         <div className="tracker-field">
-          <label className="file-upload-label">
-            <Paperclip size={15} />
-            {file ? file.name : 'Attach receipt (optional)'}
-            <input
-              id="tx-receipt"
-              type="file"
-              accept="image/jpg,image/jpeg,image/png,image/webp"
-              onChange={handleFileChange}
-            />
-          </label>
+          {editingTransaction && editingTransaction.receiptUrl && !removeReceipt && !file ? (
+            <div className="receipt-preview-container">
+              <img src={editingTransaction.receiptUrl} alt="Receipt" style={{ maxWidth: '100px', borderRadius: '4px', display: 'block' }} />
+              <div 
+                className="receipt-overlay" 
+                onClick={() => setRemoveReceipt(true)}
+                title="Remove Receipt"
+              >
+                <Trash2 size={24} color="#fff" />
+              </div>
+            </div>
+          ) : (
+            <>
+              <label className="file-upload-label">
+                <Paperclip size={15} />
+                {file ? file.name : 'Attach receipt (optional)'}
+                <input
+                  id="tx-receipt"
+                  type="file"
+                  accept="image/jpg,image/jpeg,image/png,image/webp"
+                  onChange={handleFileChange}
+                />
+              </label>
+              {previewUrl && (
+                <div className="receipt-preview-container" style={{ marginTop: '10px' }}>
+                  <img src={previewUrl} alt="Receipt Preview" style={{ maxWidth: '100px', borderRadius: '4px', display: 'block' }} />
+                  <div 
+                    className="receipt-overlay" 
+                    onClick={() => { setFile(null); setPreviewUrl(null); }}
+                    title="Remove selected file"
+                  >
+                    <Trash2 size={24} color="#fff" />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {error && <div className="tracker-error">{error}</div>}

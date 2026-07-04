@@ -1,0 +1,2976 @@
+================================================================================
+                     INVESTLAB — DAY 1: BACKEND FOUNDATION
+                 COMPREHENSIVE DOCUMENTATION & INTERVIEW GUIDE
+================================================================================
+
+  Project:    BudgetBuddy — InvestLab Module
+  Day:        Day 1 of InvestLab development
+  Focus:      Backend foundation only (no frontend, no AI, no BullMQ)
+  Stack:      Node.js, Express, MongoDB, Redis, Socket.io, WebSockets
+  Date:       June 2026
+
+================================================================================
+                    SECTION 1: HIGH-LEVEL FEATURE OVERVIEW
+================================================================================
+
+1.1 WHAT IS INVESTLAB?
+──────────────────────
+
+  InvestLab is an investment-learning module embedded inside BudgetBuddy, a
+  MERN-stack student finance platform. It provides students with a simulated
+  paper trading environment where they can learn how markets work without
+  risking real money.
+
+  Key Characteristics:
+  - Paper trading with $10,000 simulated cash
+  - Real-time market data from Finnhub (actual stock prices)
+  - Investment readiness scoring based on the student's existing financial data
+  - Trade tracking and portfolio valuation
+  - NOT a stock trading platform — no real money, no brokerage integration
+
+1.2 WHY DOES INVESTLAB EXIST INSIDE BUDGETBUDDY?
+─────────────────────────────────────────────────
+
+  BudgetBuddy already tracks a student's:
+  - Income and expenses (Transaction model)
+  - Budget limits per category (Budget model)
+  - Recurring subscriptions (subscriptionService)
+  - Spending patterns over time
+
+  InvestLab leverages ALL of this existing data to determine if a student
+  is financially "ready" to start investing. This creates a natural progression:
+
+    Step 1: Track your expenses          (existing)
+    Step 2: Set and follow budgets       (existing)
+    Step 3: Understand your readiness    (InvestLab - readiness score)
+    Step 4: Practice with paper trading  (InvestLab - portfolio/trades)
+    Step 5: Learn from real market data  (InvestLab - Finnhub WebSocket)
+
+  The readiness score bridges the gap between "tracking money" and
+  "growing money" — which is the natural next step for any student.
+
+1.3 WHY IS IT AN INVESTMENT-LEARNING MODULE AND NOT A STOCK TRADING PLATFORM?
+──────────────────────────────────────────────────────────────────────────────
+
+  Reasons:
+  1. Legal: Real stock trading requires brokerage licenses, SEC compliance,
+     KYC verification, and regulatory approvals. This is a student project.
+
+  2. Target Audience: Students typically don't have investable capital. They
+     need to LEARN how markets work before committing real money.
+
+  3. Safety: Paper trading eliminates financial risk while preserving the
+     learning experience. A student who loses $5,000 in paper money learns
+     the same lesson as losing real money — without the consequences.
+
+  4. Integration: By embedding it inside BudgetBuddy, we can use real
+     financial data (expenses, budgets, subscriptions) to teach students
+     WHEN they're ready to invest — not just HOW.
+
+  5. Scope: A real trading platform would require order books, market
+     makers, settlement systems, and compliance infrastructure. InvestLab
+     focuses purely on education.
+
+1.4 PROBLEMS SOLVED
+────────────────────
+
+  Problem 1: Students don't know WHEN they're ready to invest
+  Solution:  Readiness scoring engine that analyzes their actual finances
+
+  Problem 2: Students are afraid to try investing
+  Solution:  Paper trading with $10,000 simulated cash — zero risk
+
+  Problem 3: Students don't understand real-time markets
+  Solution:  Live market data via Finnhub WebSocket — real prices, real time
+
+  Problem 4: Students can't track their investment learning progress
+  Solution:  Trade history, portfolio valuation, P&L tracking
+
+  Problem 5: Financial education apps feel disconnected from personal finance
+  Solution:  InvestLab uses the student's OWN expense/budget data for readiness
+
+1.5 STUDENT USE CASES
+─────────────────────
+
+  Use Case 1: "Am I Ready?"
+    A student checks their readiness score. They have a savings rate of 30%,
+    all budgets within limits, and low subscription burden. Score: 72 ("Ready").
+    They now feel confident to explore paper trading.
+
+  Use Case 2: "Practice Trading"
+    A student buys 5 shares of AAPL at $300. The next day, AAPL goes to $305.
+    Their portfolio shows a $25 unrealized gain. They learn about P&L without
+    losing real money.
+
+  Use Case 3: "Learn from Mistakes"
+    A student buys TSLA at $400. It drops to $380. They sell in panic at a loss.
+    Their trade history shows the mistake. They learn about holding vs. selling.
+
+  Use Case 4: "Market Awareness"
+    Through real-time price updates, students learn that markets move constantly.
+    They see NVDA spike 2% in a day and understand volatility.
+
+1.6 TECHNICAL GOALS (DAY 1)
+────────────────────────────
+
+  1. Build real-time market data infrastructure (Finnhub WebSocket)
+  2. Design and create MongoDB models (Portfolio, Trade, PortfolioSnapshot)
+  3. Implement Redis Pub/Sub architecture for scalable price distribution
+  4. Integrate Socket.io for real-time client communication
+  5. Build REST APIs for readiness, portfolio, buy, sell, trades
+  6. Create a reusable readiness scoring engine
+  7. Create a reusable portfolio valuation service
+  8. Auto-provision portfolios on user signup
+  9. Keep controllers thin, business logic in services
+  10. Do NOT modify any existing BudgetBuddy functionality
+
+
+================================================================================
+                     SECTION 2: ARCHITECTURE OVERVIEW
+================================================================================
+
+2.1 COMPLETE ARCHITECTURE DIAGRAM
+──────────────────────────────────
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                     REAL-TIME MARKET DATA PIPELINE                 │
+  │                                                                     │
+  │   Finnhub WebSocket (wss://ws.finnhub.io)                         │
+  │         │                                                           │
+  │         │  Trade data: { s: "AAPL", p: 300.26, v: 100, t: ... }   │
+  │         ▼                                                           │
+  │   ┌─────────────────┐                                               │
+  │   │ finnhubService   │  ← WebSocket client + latestPrices Map      │
+  │   │                  │  ← Auto-reconnect with exponential backoff  │
+  │   └────────┬─────────┘                                               │
+  │            │                                                         │
+  │            │  EventEmitter.emit('priceUpdate', updates)             │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ marketDataGateway     │  ← Bridges EventEmitter to Redis       │
+  │   └────────┬──────────────┘                                           │
+  │            │                                                         │
+  │            │  publisher.publish('market:prices', payload)            │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ Redis Pub/Sub         │  ← Channel: 'market:prices'            │
+  │   │ (redisPubSub.js)      │  ← Separate publisher + subscriber     │
+  │   └────────┬──────────────┘                                           │
+  │            │                                                         │
+  │            │  subscriber.on('message', ...)                         │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ server.js (bridge)    │  ← Receives from Redis, emits to io   │
+  │   └────────┬──────────────┘                                           │
+  │            │                                                         │
+  │            │  io.emit('priceUpdate', data)                          │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ Socket.io             │  ← Events: priceSnapshot, priceUpdate  │
+  │   └────────┬──────────────┘                                           │
+  │            │                                                         │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ React Frontend        │  ← (Future — Day 2+)                   │
+  │   └──────────────────────┘                                           │
+  └─────────────────────────────────────────────────────────────────────┘
+
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                        REST API PIPELINE                           │
+  │                                                                     │
+  │   Client (Postman / React)                                         │
+  │         │                                                           │
+  │         │  HTTP Request + Bearer JWT token                         │
+  │         ▼                                                           │
+  │   ┌──────────────────────┐                                           │
+  │   │ Express Router        │  ← /api/investlab/*                    │
+  │   └────────┬──────────────┘                                           │
+  │            │                                                         │
+  │            │  protect middleware                                    │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ JWT Auth Middleware   │  ← Verifies token, attaches req.user   │
+  │   └────────┬──────────────┘                                           │
+  │            │                                                         │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ Controller (thin)     │  ← Validation + orchestration          │
+  │   └────────┬──────────────┘                                           │
+  │            │                                                         │
+  │            │  Calls services                                        │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ Services              │  ← Business logic                      │
+  │   │ - readinessEngine     │                                         │
+  │   │ - portfolioValuation  │                                         │
+  │   │ - finnhubService      │                                         │
+  │   │ - subscriptionService │  (existing, reused)                    │
+  │   └────────┬──────────────┘                                           │
+  │            │                                                         │
+  │            ▼                                                         │
+  │   ┌──────────────────────┐                                           │
+  │   │ MongoDB               │  ← Portfolio, Trade, PortfolioSnapshot │
+  │   └──────────────────────┘                                           │
+  └─────────────────────────────────────────────────────────────────────┘
+
+2.2 LAYER-BY-LAYER EXPLANATION
+──────────────────────────────
+
+  LAYER 1: Finnhub WebSocket
+  ──────────────────────────
+  What:    External WebSocket API providing real-time trade data
+  Why:     We need actual market prices for paper trading to feel real
+  Data:    Sends trade events with symbol, price, volume, timestamp
+  Note:    Free tier supports up to 50 symbols (we use 6)
+
+  LAYER 2: finnhubService
+  ───────────────────────
+  What:    Our WebSocket client that connects to Finnhub
+  Why:     Centralizes connection management, caching, and reconnection
+  Key:     Maintains a latestPrices Map (in-memory cache)
+  Output:  Emits 'priceUpdate' events via a shared EventEmitter
+
+  LAYER 3: EventEmitter
+  ─────────────────────
+  What:    Node.js built-in event system
+  Why:     Decouples the WebSocket client from downstream consumers
+  Benefit: finnhubService doesn't need to know WHO listens to its events.
+           Today it's marketDataGateway. Tomorrow it could be an analytics
+           pipeline, a logging system, or a BullMQ job producer.
+
+  LAYER 4: marketDataGateway
+  ──────────────────────────
+  What:    Bridges EventEmitter events to Redis Pub/Sub
+  Why:     Decouples market data ingestion from Socket.io delivery
+  Key:     Uses a dedicated Redis publisher connection
+
+  LAYER 5: Redis Pub/Sub
+  ──────────────────────
+  What:    Redis publish/subscribe messaging
+  Why:     Enables horizontal scaling (multiple server instances)
+  Channel: 'market:prices'
+  Key:     Separate connections for publish and subscribe (Redis requirement)
+
+  LAYER 6: Socket.io
+  ──────────────────
+  What:    Real-time bidirectional communication with clients
+  Why:     Clients need live price updates without polling
+  Events:  'priceSnapshot' (on connect), 'priceUpdate' (on each price change)
+
+2.3 WHY THIS ARCHITECTURE? (ALTERNATIVES CONSIDERED)
+─────────────────────────────────────────────────────
+
+  REJECTED: Finnhub → Direct Socket.io
+  ─────────────────────────────────────
+  Problem: Tightly couples data source to delivery mechanism
+  Problem: Cannot scale to multiple server instances
+  Problem: Cannot add other consumers (analytics, logging) without code changes
+  Problem: If Socket.io goes down, we lose data ingestion too
+
+  REJECTED: Polling REST API for prices
+  ──────────────────────────────────────
+  Problem: High latency (seconds or minutes between updates)
+  Problem: Wasted HTTP requests when prices haven't changed
+  Problem: Higher server load from repeated connections
+
+  REJECTED: Server-Sent Events (SSE)
+  ───────────────────────────────────
+  Problem: Unidirectional only (server → client)
+  Problem: No built-in reconnection handling
+  Problem: Less ecosystem support than Socket.io
+
+  CHOSEN: Finnhub WS → EventEmitter → Redis Pub/Sub → Socket.io
+  ──────────────────────────────────────────────────────────────
+  Benefit: Each layer is independently scalable
+  Benefit: Redis enables multi-server architectures
+  Benefit: EventEmitter allows multiple subscribers
+  Benefit: Socket.io handles reconnection, rooms, namespaces
+  Benefit: Clean separation of concerns
+
+
+================================================================================
+                       SECTION 3: FOLDER STRUCTURE
+================================================================================
+
+3.1 FILES CREATED (10 new files)
+────────────────────────────────
+
+  backend/
+  ├── config/
+  │   └── redisPubSub.js          [NEW]  Redis Pub/Sub connections
+  ├── controllers/
+  │   └── investlabController.js  [NEW]  API handlers (thin)
+  ├── models/
+  │   ├── Portfolio.js            [NEW]  Paper trading portfolio
+  │   ├── Trade.js                [NEW]  Buy/sell trade records
+  │   └── PortfolioSnapshot.js    [NEW]  Point-in-time snapshots
+  ├── routes/
+  │   └── investlabRoutes.js      [NEW]  Route definitions
+  └── services/
+      ├── finnhubService.js       [NEW]  Finnhub WebSocket client
+      ├── marketDataGateway.js    [NEW]  EventEmitter → Redis bridge
+      ├── readinessEngine.js      [NEW]  Readiness scoring (pure logic)
+      └── portfolioValuationService.js [NEW] Portfolio valuation (pure logic)
+
+3.2 FILES MODIFIED (2 existing files)
+─────────────────────────────────────
+
+  backend/
+  ├── server.js                   [MODIFIED]  Socket.io + Redis bridge
+  └── controllers/
+      └── authController.js       [MODIFIED]  Auto-create Portfolio on signup
+
+3.3 DETAILED FILE ANALYSIS
+──────────────────────────
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: config/redisPubSub.js                                      │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Create dedicated Redis connections for Pub/Sub    │
+  │ Responsibility: Manage publisher and subscriber ioredis clients  │
+  │ Inputs:        REDIS_URL environment variable                    │
+  │ Outputs:       { publisher, subscriber, MARKET_CHANNEL }         │
+  │ Interacts:     - marketDataGateway.js (uses publisher)           │
+  │                - server.js (uses subscriber)                     │
+  │ Why separate:  Redis forbids mixing SUBSCRIBE and GET/SET on     │
+  │                the same connection. The existing config/redis.js │
+  │                is for caching. This file is ONLY for Pub/Sub.    │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: models/Portfolio.js                                        │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Store user paper trading portfolio                │
+  │ Responsibility: Define schema for cash balance + stock holdings  │
+  │ Inputs:        userId (ObjectId ref to User)                     │
+  │ Outputs:       Mongoose model for CRUD operations                │
+  │ Interacts:     - investlabController.js (buy, sell, portfolio)   │
+  │                - authController.js (auto-create on signup)       │
+  │                - portfolioValuationService.js (valuation calc)   │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: models/Trade.js                                            │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Record every buy/sell transaction                 │
+  │ Responsibility: Immutable trade history (audit trail)            │
+  │ Inputs:        userId, symbol, type, quantity, price, total      │
+  │ Outputs:       Mongoose model for creating and querying trades   │
+  │ Interacts:     - investlabController.js (create on buy/sell,     │
+  │                  query for trade history)                        │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: models/PortfolioSnapshot.js                                │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Store point-in-time portfolio value snapshots     │
+  │ Responsibility: Enable future analytics and P&L history charts   │
+  │ Inputs:        userId, portfolioValue, cashBalance, holdingsValue│
+  │ Outputs:       Mongoose model (not yet used — for future BullMQ) │
+  │ Interacts:     - (Future) BullMQ snapshot job will populate this │
+  │                - portfolioValuationService calculates the values │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: services/finnhubService.js                                 │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Connect to Finnhub WebSocket for live prices      │
+  │ Responsibility: WS connection, caching, reconnection, events     │
+  │ Inputs:        FINNHUB_API_KEY env variable                      │
+  │ Outputs:       { startFinnhub, getLatestPrices, priceEmitter,    │
+  │                  SYMBOLS }                                       │
+  │ Interacts:     - marketDataGateway.js (listens to priceEmitter)  │
+  │                - investlabController.js (reads getLatestPrices)  │
+  │                - server.js (calls startFinnhub on boot)          │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: services/marketDataGateway.js                              │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Bridge EventEmitter events to Redis Pub/Sub       │
+  │ Responsibility: Publish price updates to Redis channel           │
+  │ Inputs:        priceEmitter events from finnhubService           │
+  │ Outputs:       Published messages on 'market:prices' channel     │
+  │ Interacts:     - finnhubService.js (source of events)            │
+  │                - redisPubSub.js (uses publisher)                 │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: services/readinessEngine.js                                │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Calculate investment readiness score              │
+  │ Responsibility: Pure scoring logic — NO database access          │
+  │ Inputs:        { monthlyIncome, monthlyExpenses, monthlySavings, │
+  │                  budgetAdherence, subscriptionBurden,            │
+  │                  spendingConsistency }                           │
+  │ Outputs:       { score (0-100), status, breakdown }              │
+  │ Interacts:     - investlabController.js (calls calculateReadiness│
+  │                  with data gathered from MongoDB)                │
+  │ Design:        Stateless pure function — easily testable         │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: services/portfolioValuationService.js                      │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Calculate portfolio value and P&L metrics         │
+  │ Responsibility: Pure valuation logic — reusable by any caller    │
+  │ Inputs:        portfolio document, pricesMap                     │
+  │ Outputs:       { cashBalance, holdings[], holdingsValue,         │
+  │                  portfolioValue, totalPnL, totalPnLPct }         │
+  │ Interacts:     - investlabController.js (getPortfolio endpoint)  │
+  │                - (Future) BullMQ snapshot job                    │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: controllers/investlabController.js                         │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Handle HTTP requests for InvestLab endpoints      │
+  │ Responsibility: Validation, orchestration, response formatting   │
+  │ Inputs:        req.user (from JWT), req.body, req.query          │
+  │ Outputs:       JSON responses                                    │
+  │ Interacts:     - readinessEngine.js, portfolioValuationService,  │
+  │                  finnhubService, subscriptionService             │
+  │                - Portfolio, Trade, Transaction, Budget models    │
+  │ Design:        Thin controllers — delegates to services          │
+  └───────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ FILE: routes/investlabRoutes.js                                  │
+  ├───────────────────────────────────────────────────────────────────┤
+  │ Purpose:       Define URL-to-controller mappings                 │
+  │ Responsibility: Route registration + middleware application      │
+  │ Inputs:        HTTP requests to /api/investlab/*                 │
+  │ Outputs:       Delegates to controller functions                 │
+  │ Interacts:     - authMiddleware.js (protect middleware)           │
+  │                - investlabController.js (handler functions)      │
+  │                - server.js (registered via app.use)              │
+  └───────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                       SECTION 4: DATABASE DESIGN
+================================================================================
+
+4.1 COLLECTIONS OVERVIEW
+─────────────────────────
+
+  ┌────────────────────┬─────────────────────────────────────────────┐
+  │ Collection          │ Purpose                                    │
+  ├────────────────────┼─────────────────────────────────────────────┤
+  │ portfolios          │ User paper trading portfolio (1 per user)  │
+  │ trades              │ Buy/sell trade history (many per user)     │
+  │ portfoliosnapshots  │ Point-in-time portfolio values (future)    │
+  └────────────────────┴─────────────────────────────────────────────┘
+
+  Note: These join existing collections like users, transactions, and budgets.
+
+4.2 PORTFOLIO SCHEMA
+────────────────────
+
+  Collection: portfolios
+
+  Fields:
+  ┌──────────────────┬──────────────────────┬────────────────────────┐
+  │ Field             │ Type                 │ Constraints            │
+  ├──────────────────┼──────────────────────┼────────────────────────┤
+  │ _id               │ ObjectId (auto)      │ Primary key            │
+  │ userId            │ ObjectId (ref: User) │ Required, Unique       │
+  │ cashBalance       │ Number               │ Default: 10000         │
+  │ holdings          │ Array of subdocs     │ Each: {symbol, qty,    │
+  │                   │                      │  avgBuyPrice}          │
+  │ createdAt         │ Date (auto)          │ timestamps: true       │
+  │ updatedAt         │ Date (auto)          │ timestamps: true       │
+  └──────────────────┴──────────────────────┴────────────────────────┘
+
+  Holdings Subdocument:
+  ┌──────────────────┬──────────────────────┬────────────────────────┐
+  │ Field             │ Type                 │ Constraints            │
+  ├──────────────────┼──────────────────────┼────────────────────────┤
+  │ symbol            │ String               │ Required               │
+  │ quantity          │ Number               │ Required, min: 0       │
+  │ avgBuyPrice       │ Number               │ Required, min: 0       │
+  └──────────────────┴──────────────────────┴────────────────────────┘
+
+  Note: Holdings subdocument has { _id: false } to avoid generating
+  unnecessary ObjectIds for each holding entry.
+
+  Purpose:
+  - Tracks a user's paper trading account
+  - One portfolio per user (unique constraint on userId)
+  - cashBalance starts at $10,000 (simulated money)
+  - holdings array stores current stock positions with weighted average cost
+
+  Relationships:
+  - One-to-One with User (each user has exactly one portfolio)
+  - userId references the User collection
+
+  Indexes:
+  - Unique index on userId (enforced by unique: true in schema)
+  - This prevents duplicate portfolios and enables O(1) lookups by user
+
+  Sample Document:
+  {
+    "_id": ObjectId("6a318866604474ecdd409bba"),
+    "userId": ObjectId("6a318866604474ecdd409bb9"),
+    "cashBalance": 8498.70,
+    "holdings": [
+      {
+        "symbol": "AAPL",
+        "quantity": 5,
+        "avgBuyPrice": 300.26
+      },
+      {
+        "symbol": "NVDA",
+        "quantity": 10,
+        "avgBuyPrice": 209.14
+      }
+    ],
+    "createdAt": "2026-06-16T17:31:18.251Z",
+    "updatedAt": "2026-06-16T17:32:09.579Z"
+  }
+
+4.3 TRADE SCHEMA
+────────────────
+
+  Collection: trades
+
+  Fields:
+  ┌──────────────────┬──────────────────────┬────────────────────────┐
+  │ Field             │ Type                 │ Constraints            │
+  ├──────────────────┼──────────────────────┼────────────────────────┤
+  │ _id               │ ObjectId (auto)      │ Primary key            │
+  │ userId            │ ObjectId (ref: User) │ Required               │
+  │ symbol            │ String               │ Required               │
+  │ type              │ String               │ Required, enum:        │
+  │                   │                      │ ['buy', 'sell']        │
+  │ quantity          │ Number               │ Required, min: 1       │
+  │ price             │ Number               │ Required, min: 0       │
+  │ total             │ Number               │ Required, min: 0       │
+  │ timestamp         │ Date                 │ Default: Date.now      │
+  └──────────────────┴──────────────────────┴────────────────────────┘
+
+  Purpose:
+  - Immutable audit trail of every buy/sell action
+  - Never modified or deleted — append-only
+  - Separate from Portfolio for clean separation of concerns
+  - Enables trade history display, analytics, and learning
+
+  Relationships:
+  - Many-to-One with User (each user has many trades)
+  - userId references the User collection
+
+  Indexes:
+  - Compound index: { userId: 1, timestamp: -1 }
+  - This enables efficient per-user trade history sorted by most recent
+
+  Sample Document:
+  {
+    "_id": ObjectId("6a31888e604474ecdd409bbb"),
+    "userId": ObjectId("6a318866604474ecdd409bb9"),
+    "symbol": "AAPL",
+    "type": "buy",
+    "quantity": 5,
+    "price": 300.26,
+    "total": 1501.30,
+    "timestamp": "2026-06-16T17:31:58.386Z"
+  }
+
+4.4 PORTFOLIOSNAPSHOT SCHEMA
+────────────────────────────
+
+  Collection: portfoliosnapshots
+
+  Fields:
+  ┌──────────────────┬──────────────────────┬────────────────────────┐
+  │ Field             │ Type                 │ Constraints            │
+  ├──────────────────┼──────────────────────┼────────────────────────┤
+  │ _id               │ ObjectId (auto)      │ Primary key            │
+  │ userId            │ ObjectId (ref: User) │ Required               │
+  │ portfolioValue    │ Number               │ Required               │
+  │ cashBalance       │ Number               │ Required               │
+  │ holdingsValue     │ Number               │ Required               │
+  │ timestamp         │ Date                 │ Default: Date.now      │
+  └──────────────────┴──────────────────────┴────────────────────────┘
+
+  Purpose:
+  - Captures portfolio value at specific points in time
+  - Enables performance charts (portfolio value over time)
+  - Will be populated by a future BullMQ cron job (e.g., every 15 minutes)
+
+  Relationships:
+  - Many-to-One with User (each user has many snapshots over time)
+
+  Indexes:
+  - Compound index: { userId: 1, timestamp: -1 }
+  - Enables efficient time-series queries per user
+
+  Future Use:
+  - BullMQ job calls portfolioValuationService.valuatePortfolio()
+    and creates a PortfolioSnapshot document periodically
+  - Frontend will use this for performance charts
+  - Can calculate daily/weekly/monthly returns
+
+  Sample Document (future):
+  {
+    "_id": ObjectId("..."),
+    "userId": ObjectId("6a318866604474ecdd409bb9"),
+    "portfolioValue": 10250.50,
+    "cashBalance": 8498.70,
+    "holdingsValue": 1751.80,
+    "timestamp": "2026-06-16T18:00:00.000Z"
+  }
+
+
+================================================================================
+                     SECTION 5: DBMS CONCEPTS USED
+================================================================================
+
+5.1 COLLECTIONS
+───────────────
+
+  Definition:
+    In MongoDB, a collection is the equivalent of a table in relational
+    databases. It stores a group of related documents. Collections do not
+    enforce a fixed schema — each document can have different fields.
+
+  Where Used:
+    - portfolios: Stores user paper trading portfolios
+    - trades: Stores buy/sell trade records
+    - portfoliosnapshots: Stores point-in-time portfolio values
+
+  Why Used:
+    MongoDB collections provide flexible schema design, which is ideal
+    for a rapidly evolving feature like InvestLab where fields may change.
+
+  Interview Answer:
+    "I used MongoDB collections to store portfolio, trade, and snapshot
+    data. Collections in MongoDB are schema-flexible, so I could iterate
+    on the data model quickly during development. I still enforced
+    structure using Mongoose schemas for type safety and validation."
+
+5.2 DOCUMENTS
+─────────────
+
+  Definition:
+    A document is a single record in a MongoDB collection, stored as
+    BSON (Binary JSON). Each document has a unique _id field.
+
+  Where Used:
+    - Each Portfolio document represents one user's paper trading account
+    - Each Trade document represents one buy/sell action
+    - Each PortfolioSnapshot represents one point-in-time value capture
+
+  Why Used:
+    Documents map naturally to JavaScript objects, making them ideal
+    for a Node.js/Express backend. No ORM translation layer needed.
+
+5.3 OBJECTID
+─────────────
+
+  Definition:
+    ObjectId is MongoDB's default 12-byte unique identifier for documents.
+    It contains a timestamp, machine identifier, process ID, and counter.
+
+  Where Used:
+    - _id field on every document (auto-generated)
+    - userId field on Portfolio, Trade, PortfolioSnapshot (references)
+
+  Why Used:
+    - Globally unique without coordination (no auto-increment locks)
+    - Timestamp-embedded (can extract creation time from _id)
+    - Efficient for indexing
+
+  Interview Answer:
+    "ObjectIds are globally unique identifiers that MongoDB generates
+    automatically. They're 12 bytes and contain a timestamp component,
+    which means I can sort by _id to get chronological order without
+    a separate timestamp field. I used ObjectId references for userId
+    to create relationships between collections."
+
+5.4 REFERENCES (ref)
+────────────────────
+
+  Definition:
+    In Mongoose, the 'ref' property on an ObjectId field indicates which
+    collection the ID references. This enables population (joins).
+
+  Where Used:
+    - Portfolio.userId → ref: 'User'
+    - Trade.userId → ref: 'User'
+    - PortfolioSnapshot.userId → ref: 'User'
+
+  Why Used:
+    - Establishes logical relationships between collections
+    - Enables Mongoose .populate() for joins when needed
+    - Documents which collection owns the referenced document
+
+  Interview Answer:
+    "I used Mongoose ref to create relationships between InvestLab
+    collections and the User collection. For example, Portfolio.userId
+    references the User model. This lets me use .populate('userId')
+    to join user data when needed, similar to a foreign key in SQL."
+
+5.5 RELATIONSHIPS
+─────────────────
+
+  ONE-TO-ONE: User ↔ Portfolio
+  ────────────────────────────
+  Definition: Each user has exactly one portfolio.
+  Implementation: unique: true constraint on Portfolio.userId
+  Why: A paper trading account is per-user. Multiple portfolios
+       would complicate the UX and business logic.
+
+  ONE-TO-MANY: User → Trades
+  ──────────────────────────
+  Definition: Each user has many trades, but each trade belongs to one user.
+  Implementation: Trade.userId references User._id (no unique constraint)
+  Why: A user makes many buy/sell actions over time. Each trade is
+       an immutable record — it's never updated or deleted.
+
+  ONE-TO-MANY: User → PortfolioSnapshots
+  ──────────────────────────────────────
+  Definition: Each user has many snapshots over time.
+  Implementation: PortfolioSnapshot.userId references User._id
+  Why: Snapshots are time-series data — many data points per user.
+
+  Interview Answer:
+    "InvestLab uses both one-to-one and one-to-many relationships.
+    User-to-Portfolio is one-to-one, enforced by a unique index on userId.
+    User-to-Trade is one-to-many because each user can have hundreds of
+    trades over time. I chose not to embed trades inside the Portfolio
+    document because the trades array could grow unboundedly, which would
+    hit MongoDB's 16MB document size limit."
+
+5.6 INDEXING
+────────────
+
+  Definition:
+    An index is a data structure that improves query performance by
+    allowing MongoDB to find documents without scanning every document
+    in a collection (similar to a book's index).
+
+  Where Used:
+    - Portfolio: unique index on userId (enforced by unique: true)
+    - Trade: compound index { userId: 1, timestamp: -1 }
+    - PortfolioSnapshot: compound index { userId: 1, timestamp: -1 }
+
+  Why Used:
+    - Portfolio unique index: O(1) lookup by user, prevents duplicates
+    - Trade compound index: Efficient for "get trades for user X,
+      sorted by newest first" — the most common query pattern
+    - Snapshot compound index: Same pattern — time-series per user
+
+  Interview Answer:
+    "I created compound indexes on { userId: 1, timestamp: -1 } for
+    trades and snapshots. This means MongoDB can satisfy the query
+    'find all trades for user X, sorted by timestamp descending'
+    entirely from the index without scanning the full collection.
+    The '1' means ascending order on userId (for equality matching)
+    and '-1' means descending order on timestamp (for sort order).
+    This is called an ESR pattern — Equality, Sort, Range."
+
+5.7 UNIQUE CONSTRAINTS
+──────────────────────
+
+  Definition:
+    A unique constraint ensures no two documents in a collection can
+    have the same value for a specific field or combination of fields.
+
+  Where Used:
+    - Portfolio.userId: unique: true
+    - This ensures each user has AT MOST one portfolio
+
+  Why Used:
+    - Business rule: One paper trading account per user
+    - Prevents bugs where multiple portfolios could be accidentally created
+    - Acts as a database-level safety net
+
+5.8 SCHEMA DESIGN: EMBEDDING VS REFERENCING
+────────────────────────────────────────────
+
+  DECISION: Holdings are EMBEDDED inside Portfolio (subdocument array)
+
+  Why Embedded:
+  - Holdings are always accessed together with the portfolio
+  - A user has a small, bounded number of holdings (max 6 symbols)
+  - No need to query holdings independently
+  - Atomic updates (buy/sell modifies portfolio + holdings in one write)
+
+  DECISION: Trades are in a SEPARATE COLLECTION (referenced)
+
+  Why Referenced (not embedded):
+  - Trade history grows unboundedly over time
+  - MongoDB documents have a 16MB size limit
+  - Trades need independent pagination and filtering
+  - Trades are append-only (never modified)
+  - Clean separation: Portfolio = current state, Trade = history
+
+  Interview Answer:
+    "I used embedding for holdings because they're always accessed with
+    the portfolio, there's a small bounded number of them (max 6 stocks),
+    and they need atomic updates with cash balance. I used a separate
+    collection for trades because trade history grows unboundedly — a
+    user could have thousands of trades. If I embedded trades inside
+    Portfolio, the document would eventually hit MongoDB's 16MB limit.
+    Additionally, trades need independent pagination which is hard with
+    embedded arrays."
+
+5.9 DENORMALIZATION VS NORMALIZATION
+────────────────────────────────────
+
+  Definition:
+    - Normalization: Split data across tables/collections to avoid
+      duplication (SQL-style). Requires joins for queries.
+    - Denormalization: Duplicate some data to avoid joins and improve
+      read performance.
+
+  Where Used:
+    - Trade.total is denormalized — it's price * quantity, which could
+      be computed. But storing it avoids recalculation on every read.
+    - Portfolio.holdings[].avgBuyPrice is maintained as a running weighted
+      average — denormalized for instant access.
+
+  Why:
+    - In MongoDB, denormalization is common because joins ($lookup) are
+      expensive compared to relational databases
+    - Trade.total saves computation on trade history queries
+    - avgBuyPrice saves recomputing from entire trade history
+
+5.10 AGGREGATION OPPORTUNITIES
+──────────────────────────────
+
+  Definition:
+    MongoDB's aggregation pipeline processes documents through stages
+    like $match, $group, $sort, $project to compute derived values.
+
+  Where Used in InvestLab:
+    - getReadiness controller uses aggregation pipelines to compute:
+      * Total monthly income: $match + $group + $sum
+      * Total monthly expenses: $match + $group + $sum
+      * Per-category expenses: $match + $group + $sum
+      * Last month's expenses: $match + $group + $sum
+
+  Why:
+    - Aggregation runs on the database server, not in Node.js
+    - More efficient than fetching all documents and computing in JS
+    - Reduces network transfer (only aggregated results are returned)
+
+  Interview Answer:
+    "I used MongoDB aggregation pipelines in the readiness endpoint to
+    compute monthly totals, category breakdowns, and month-over-month
+    comparisons. The advantage is that aggregation runs on the MongoDB
+    server — if I have 10,000 transactions, I don't transfer all of
+    them to Node.js. I only get back the computed totals. This is
+    O(n) on the server but O(1) for network transfer."
+
+
+================================================================================
+                       SECTION 6: BACKEND FLOW
+================================================================================
+
+6.1 GET /api/investlab/readiness
+────────────────────────────────
+
+  Purpose: Calculate the student's investment readiness score using
+  their existing BudgetBuddy financial data.
+
+  Step-by-Step Flow:
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  Client sends: GET /api/investlab/readiness                     │
+  │  Headers: Authorization: Bearer <JWT>                           │
+  └──────┬───────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  ROUTE LAYER: investlabRoutes.js                                │
+  │  router.get('/readiness', getReadiness)                         │
+  │  router.use(protect) applies JWT middleware first               │
+  └──────┬───────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  MIDDLEWARE: authMiddleware.js → protect()                      │
+  │  1. Extract token from Authorization header                    │
+  │  2. jwt.verify(token, JWT_SECRET)                              │
+  │  3. User.findById(decoded.id) → attach to req.user             │
+  │  4. Call next()                                                │
+  └──────┬───────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  CONTROLLER: investlabController.js → getReadiness()            │
+  │                                                                 │
+  │  Step 1: Get current month/year boundaries                     │
+  │  Step 2: Aggregate income transactions → monthlyIncome          │
+  │  Step 3: Aggregate expense transactions → monthlyExpenses       │
+  │  Step 4: Calculate monthlySavings = income - expenses           │
+  │  Step 5: Fetch budgets, aggregate expenses per category          │
+  │          → budgetAdherence (ratio of categories within budget)   │
+  │  Step 6: detectSubscriptions() → subscriptionBurden              │
+  │          (subscription cost / income)                            │
+  │  Step 7: Aggregate last month's expenses                        │
+  │          → spendingConsistency (1 - |diff| / max)               │
+  │  Step 8: Pass all 6 inputs to readinessEngine                   │
+  └──────┬───────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  SERVICE: readinessEngine.js → calculateReadiness()             │
+  │                                                                 │
+  │  1. Savings Rate Score     = (savings/income) * 100 * 0.4       │
+  │  2. Budget Adherence Score = adherence * 100 * 0.3              │
+  │  3. Subscription Score     = (1 - burden) * 100 * 0.2           │
+  │  4. Consistency Score      = consistency * 100 * 0.1            │
+  │  5. Total Score            = sum of weighted scores (0-100)     │
+  │  6. Status                 = Beginner/Improving/Ready           │
+  │  7. Return { score, status, breakdown }                        │
+  └──────┬───────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  RESPONSE: 200 OK                                               │
+  │  {                                                              │
+  │    "score": 55,                                                 │
+  │    "status": "Improving",                                       │
+  │    "breakdown": { ... },                                        │
+  │    "inputs": { monthlyIncome, monthlyExpenses, ... }            │
+  │  }                                                              │
+  └──────────────────────────────────────────────────────────────────┘
+
+  Key Design Decisions:
+  - Readiness reuses EXISTING data (transactions, budgets, subscriptions)
+  - The controller gathers data; the service does scoring
+  - The service is a pure function — no database access, easily testable
+  - Promise.all() is used for parallel MongoDB aggregation queries
+
+6.2 GET /api/investlab/portfolio
+────────────────────────────────
+
+  Purpose: Fetch the user's portfolio with live market valuation.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  Client → GET /api/investlab/portfolio                          │
+  │  Headers: Authorization: Bearer <JWT>                           │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  protect() middleware → verify JWT → attach req.user             │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  CONTROLLER: getPortfolio()                                      │
+  │  1. Portfolio.findOne({ userId: req.user._id })                  │
+  │  2. If not found → Portfolio.create() (lazy initialization)      │
+  │  3. getLatestPrices() from finnhubService                       │
+  │  4. valuatePortfolio(portfolio, prices)                          │
+  │  5. Return merged response                                      │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  SERVICE: portfolioValuationService → valuatePortfolio()         │
+  │  For each holding:                                               │
+  │    costBasis = quantity * avgBuyPrice                             │
+  │    currentValue = quantity * currentPrice                        │
+  │    gainLoss = currentValue - costBasis                           │
+  │    gainLossPct = (gainLoss / costBasis) * 100                   │
+  │  Totals:                                                         │
+  │    holdingsValue = sum of all currentValues                      │
+  │    portfolioValue = cashBalance + holdingsValue                  │
+  │    totalPnL = holdingsValue - totalCostBasis                    │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  RESPONSE: 200 OK                                               │
+  │  {                                                              │
+  │    "cashBalance": 8498.70,                                      │
+  │    "holdings": [{                                               │
+  │      "symbol": "AAPL", "quantity": 5,                           │
+  │      "avgBuyPrice": 300.26, "currentPrice": 300.31,             │
+  │      "costBasis": 1501.30, "currentValue": 1501.55,             │
+  │      "gainLoss": 0.25, "gainLossPct": 0.02                     │
+  │    }],                                                          │
+  │    "portfolioValue": 10000.25,                                  │
+  │    "totalPnL": 0.25                                             │
+  │  }                                                              │
+  └──────────────────────────────────────────────────────────────────┘
+
+6.3 POST /api/investlab/buy
+───────────────────────────
+
+  Purpose: Execute a paper trade buy order.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  Client → POST /api/investlab/buy                               │
+  │  Body: { "symbol": "AAPL", "quantity": 5 }                     │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  protect() middleware → verify JWT → attach req.user             │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  CONTROLLER: buyStock()                                          │
+  │                                                                  │
+  │  VALIDATION:                                                     │
+  │  1. Check symbol and quantity are present                        │
+  │  2. Uppercase symbol, verify it's in SYMBOLS array               │
+  │  3. Parse quantity as integer, check >= 1                        │
+  │                                                                  │
+  │  PRICE CHECK:                                                    │
+  │  4. getLatestPrices() → check symbol has price data              │
+  │  5. If no price → 503 "Market data may still be loading"        │
+  │                                                                  │
+  │  BALANCE CHECK:                                                  │
+  │  6. Get or create portfolio                                      │
+  │  7. total = price * quantity                                     │
+  │  8. If cashBalance < total → 400 "Insufficient balance"         │
+  │                                                                  │
+  │  UPDATE HOLDINGS:                                                │
+  │  9a. If existing holding for this symbol:                        │
+  │      Weighted avg = (oldQty*oldAvg + newQty*newPrice) / totalQty │
+  │  9b. If new symbol:                                              │
+  │      Push new holding { symbol, quantity, avgBuyPrice: price }   │
+  │                                                                  │
+  │  10. Deduct total from cashBalance                               │
+  │  11. portfolio.save()                                            │
+  │                                                                  │
+  │  RECORD TRADE:                                                   │
+  │  12. Trade.create({ userId, symbol, type:'buy', qty, price })    │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  RESPONSE: 201 Created                                          │
+  │  {                                                              │
+  │    "message": "Bought 5 shares of AAPL at $300.26",             │
+  │    "trade": { ... },                                            │
+  │    "cashBalance": 8498.70                                       │
+  │  }                                                              │
+  └──────────────────────────────────────────────────────────────────┘
+
+  Important: Weighted Average Buy Price
+  ──────────────────────────────────────
+  When a user buys the same stock multiple times at different prices,
+  we calculate a weighted average:
+
+  Example:
+    Buy 5 AAPL at $300 → avgBuyPrice = $300
+    Buy 3 AAPL at $310 → avgBuyPrice = (5*300 + 3*310) / 8 = $303.75
+
+  This is standard practice in portfolio tracking (used by brokerages
+  like Robinhood, Zerodha, etc.).
+
+6.4 POST /api/investlab/sell
+────────────────────────────
+
+  Purpose: Execute a paper trade sell order.
+
+  Flow is similar to buy, with these differences:
+  1. Check user HOLDS the symbol (holdingIndex !== -1)
+  2. Check user has ENOUGH shares (holding.quantity >= qty)
+  3. SUBTRACT quantity from holding
+  4. If quantity reaches 0, REMOVE the holding from array
+  5. ADD total to cashBalance (instead of subtracting)
+  6. Create Trade with type: 'sell'
+
+  Error Cases:
+  - 400 "Portfolio not found. Buy stocks first." (no portfolio)
+  - 400 "You do not hold any AAPL shares" (symbol not in holdings)
+  - 400 "Insufficient shares" (trying to sell more than owned)
+
+6.5 GET /api/investlab/trades
+─────────────────────────────
+
+  Purpose: Fetch paginated trade history for the user.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  Client → GET /api/investlab/trades?page=1&limit=50             │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  CONTROLLER: getTrades()                                         │
+  │  1. Parse query params: limit (default 50, max 100), page        │
+  │  2. Calculate skip = (page - 1) * limit                          │
+  │  3. Promise.all([                                                │
+  │       Trade.find({ userId }).sort({ timestamp: -1 })             │
+  │         .skip(skip).limit(limit),                                │
+  │       Trade.countDocuments({ userId })                           │
+  │     ])                                                           │
+  │  4. Return trades + pagination metadata                          │
+  └──────┬───────────────────────────────────────────────────────────┘
+         ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  RESPONSE: 200 OK                                               │
+  │  {                                                              │
+  │    "trades": [ ... ],                                           │
+  │    "pagination": {                                              │
+  │      "page": 1, "limit": 50,                                   │
+  │      "totalCount": 15, "totalPages": 1                          │
+  │    }                                                            │
+  │  }                                                              │
+  └──────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                    SECTION 7: ROUTE LAYER DEEP DIVE
+================================================================================
+
+7.1 WHAT ARE ROUTES?
+────────────────────
+
+  Routes are URL-to-handler mappings. They define WHAT HTTP method and
+  WHAT URL pattern triggers WHICH controller function. Routes are the
+  "address book" of the API.
+
+  In Express, routes are defined on a Router object:
+    router.get('/readiness', getReadiness);
+    router.post('/buy', buyStock);
+
+  This means:
+    GET http://localhost:5000/api/investlab/readiness → getReadiness()
+    POST http://localhost:5000/api/investlab/buy → buyStock()
+
+7.2 WHY DO ROUTES EXIST?
+─────────────────────────
+
+  Routes provide:
+  1. URL Organization: Group related endpoints under a prefix
+  2. Middleware Scoping: Apply middleware to a group of routes
+  3. Separation of Concerns: URL mapping is separate from business logic
+  4. Modularity: Each feature gets its own route file
+
+7.3 HOW ROUTES CONNECT TO CONTROLLERS
+──────────────────────────────────────
+
+  The route file imports controller functions and maps them:
+
+  File: routes/investlabRoutes.js
+
+    const { protect } = require('../middleware/authMiddleware');
+    const { getReadiness, getPortfolio, buyStock, sellStock, getTrades }
+      = require('../controllers/investlabController');
+
+    router.use(protect);    // Apply JWT auth to ALL routes below
+
+    router.get('/readiness', getReadiness);
+    router.get('/portfolio', getPortfolio);
+    router.post('/buy', buyStock);
+    router.post('/sell', sellStock);
+    router.get('/trades', getTrades);
+
+  Then server.js registers the router:
+
+    app.use('/api/investlab', investlabRoutes);
+
+  This creates the full URL path: /api/investlab/readiness, etc.
+
+7.4 MIDDLEWARE EXECUTION ORDER
+──────────────────────────────
+
+  When a request hits GET /api/investlab/readiness:
+
+  1. Express global middleware (runs for ALL routes):
+     → cors()          : Check CORS headers
+     → express.json()  : Parse JSON body
+     → cookieParser()  : Parse cookies
+
+  2. Router-level middleware (runs for /api/investlab/* only):
+     → protect()       : Verify JWT, attach req.user
+
+  3. Route handler:
+     → getReadiness()  : Business logic
+
+  Execution chain: cors → json → cookie → protect → getReadiness
+
+7.5 JWT PROTECTION FLOW
+────────────────────────
+
+  The protect middleware (authMiddleware.js):
+
+  1. Check if Authorization header exists and starts with 'Bearer'
+  2. Extract the token: header.split(' ')[1]
+  3. Verify token: jwt.verify(token, process.env.JWT_SECRET)
+  4. Find user: User.findById(decoded.id).select('-password')
+  5. Attach user to request: req.user = user
+  6. Call next() to proceed to the controller
+
+  If token is missing → 401 "No token"
+  If token is invalid/expired → 401 "Not authorized"
+
+  The controller then accesses req.user._id to scope all queries
+  to the authenticated user.
+
+
+================================================================================
+                   SECTION 8: CONTROLLER LAYER DEEP DIVE
+================================================================================
+
+8.1 WHAT ARE CONTROLLERS?
+─────────────────────────
+
+  Controllers are functions that handle HTTP requests. They sit between
+  routes (which define URLs) and services (which contain business logic).
+
+  Controller responsibilities:
+  1. Extract data from the request (req.body, req.query, req.user)
+  2. Validate input data
+  3. Call appropriate services
+  4. Format and send the response
+
+8.2 WHY BUSINESS LOGIC SHOULD NOT LIVE IN CONTROLLERS
+──────────────────────────────────────────────────────
+
+  Bad Pattern (fat controller):
+    const buyStock = async (req, res) => {
+      // Validation, price lookup, balance check, weighted average
+      // calculation, portfolio update, trade creation — ALL HERE
+    };
+
+  Good Pattern (thin controller):
+    const buyStock = async (req, res) => {
+      // 1. Validate
+      // 2. Call tradeService.executeBuy()  ← business logic
+      // 3. Return response
+    };
+
+  Why thin controllers?
+  1. Reusability: Services can be called from controllers, jobs, or tests
+  2. Testability: Pure service functions are easy to unit test
+  3. Maintainability: Changing business logic doesn't touch HTTP layer
+  4. Readability: Each file has a single clear responsibility
+
+  In our implementation, readinessEngine and portfolioValuationService are
+  pure service functions. The buy/sell logic is still in the controller
+  because it's tightly coupled to the HTTP request/response cycle
+  (validation errors return specific HTTP status codes). This will be
+  refactored into a tradeService in future iterations.
+
+8.3 CONTROLLER: getReadiness
+────────────────────────────
+
+  Input:  req.user._id (from JWT middleware)
+  Output: { score, status, breakdown, inputs }
+
+  Validation: None (no user input needed)
+
+  Service Calls:
+  1. Transaction.aggregate() x3 (income, expenses, category expenses)
+  2. Budget.find() (fetch user's budget limits)
+  3. detectSubscriptions() (reuses existing subscription service)
+  4. Transaction.aggregate() x1 (last month's expenses)
+  5. calculateReadiness() (readiness engine service)
+
+  Error Handling:
+  - try/catch wraps entire function
+  - 500 "Server error" for any unhandled exception
+
+8.4 CONTROLLER: getPortfolio
+────────────────────────────
+
+  Input:  req.user._id
+  Output: Portfolio with live valuation
+
+  Validation: None
+
+  Service Calls:
+  1. Portfolio.findOne() (database lookup)
+  2. Portfolio.create() (lazy init if not found)
+  3. getLatestPrices() (from finnhubService)
+  4. valuatePortfolio() (from portfolioValuationService)
+
+8.5 CONTROLLER: buyStock
+────────────────────────
+
+  Input:  req.body.symbol, req.body.quantity
+  Output: { message, trade, cashBalance }
+
+  Validation:
+  - symbol is required
+  - quantity is required
+  - symbol must be in SYMBOLS array (AAPL, MSFT, NVDA, GOOGL, AMZN, TSLA)
+  - quantity must be a positive integer (>= 1)
+  - price data must be available (503 if not)
+  - cashBalance must be sufficient (400 if not)
+
+  Service Calls:
+  - getLatestPrices() (current market price)
+  - Portfolio.findOne() / Portfolio.create()
+  - Portfolio.save() (update holdings + cash)
+  - Trade.create() (record the trade)
+
+8.6 CONTROLLER: sellStock
+─────────────────────────
+
+  Input:  req.body.symbol, req.body.quantity
+  Output: { message, trade, cashBalance }
+
+  Validation:
+  - Same as buy, plus:
+  - Portfolio must exist (400 if not)
+  - User must hold the symbol (400 if not)
+  - User must have enough shares (400 if not)
+
+8.7 CONTROLLER: getTrades
+─────────────────────────
+
+  Input:  req.query.page (default 1), req.query.limit (default 50)
+  Output: { trades, pagination }
+
+  Validation:
+  - limit is capped at 100 to prevent abuse
+  - page minimum is 1
+
+  Optimization:
+  - Promise.all() runs find() and countDocuments() in parallel
+  - Uses compound index { userId: 1, timestamp: -1 } for efficient sort
+
+
+================================================================================
+                    SECTION 9: SERVICE LAYER DEEP DIVE
+================================================================================
+
+9.1 WHAT IS SERVICE-ORIENTED ARCHITECTURE?
+──────────────────────────────────────────
+
+  Service-oriented architecture (SOA) organizes code into services —
+  modules that encapsulate specific business capabilities. Each service:
+
+  1. Has a single responsibility
+  2. Exposes a clean API (exported functions)
+  3. Hides its internal implementation
+  4. Can be tested independently
+  5. Can be reused by multiple consumers
+
+  In our codebase, services are separate .js files in the services/ folder.
+
+9.2 WHY SERVICES WERE USED
+───────────────────────────
+
+  1. Reusability: portfolioValuationService is used by the controller
+     today and will be used by BullMQ snapshot jobs tomorrow.
+
+  2. Testability: readinessEngine is a pure function — you can test
+     it with mock inputs without a database or HTTP server.
+
+  3. Separation of Concerns: finnhubService handles WebSocket
+     connections. marketDataGateway handles Redis publishing.
+     Neither knows about the other's implementation.
+
+  4. Modularity: Adding new features means adding new services,
+     not modifying existing controller code.
+
+9.3 SERVICE: finnhubService
+───────────────────────────
+
+  Purpose:
+    Connect to Finnhub's real-time WebSocket API and maintain a
+    cache of latest stock prices for 6 symbols.
+
+  Data Flow:
+    Finnhub sends: { type: 'trade', data: [{ s, p, v, t, c }, ...] }
+                        ↓
+    Parse and extract: symbol (s), price (p), volume (v), timestamp (t)
+                        ↓
+    Update latestPrices Map: { "AAPL": { price: 300.26, volume: 40, ... } }
+                        ↓
+    Emit 'priceUpdate' event via priceEmitter with changed prices
+
+  Connection Lifecycle:
+    1. startFinnhub() is called when server starts (server.js line 78)
+    2. WebSocket connects to wss://ws.finnhub.io?token=<API_KEY>
+    3. On 'open': Subscribe to 6 symbols via JSON messages
+    4. On 'message': Parse trade data, update cache, emit events
+    5. On 'close': Auto-reconnect with exponential backoff
+    6. On 'error': Log error (close event will trigger reconnect)
+
+  Reconnection Strategy:
+    Exponential backoff: 1s → 2s → 4s → 8s → 16s → 30s (capped)
+
+    Attempt 0 → wait 1 second
+    Attempt 1 → wait 2 seconds
+    Attempt 2 → wait 4 seconds
+    Attempt 3 → wait 8 seconds
+    Attempt 4 → wait 16 seconds
+    Attempt 5+ → wait 30 seconds (MAX_RECONNECT_DELAY)
+
+    Formula: delay = min(1000 * 2^attempt, 30000)
+
+    On successful connect: reconnectAttempt resets to 0
+
+  Why Exponential Backoff?
+    - Prevents hammering the server if it's down
+    - Gradually increases wait time to be respectful
+    - Caps at 30 seconds to avoid waiting too long
+    - Standard industry pattern (used by AWS, Google, etc.)
+
+  Price Cache (latestPrices):
+    - JavaScript Map object
+    - Key: symbol string (e.g., "AAPL")
+    - Value: { price, volume, timestamp }
+    - getLatestPrices() returns Object.fromEntries(latestPrices)
+    - Used by controllers for buy/sell price lookups
+    - Used by Socket.io for initial priceSnapshot on connect
+
+  EventEmitter Usage:
+    - priceEmitter is a Node.js EventEmitter instance
+    - Emits 'priceUpdate' event with changed price data
+    - marketDataGateway listens to this event
+    - Decouples finnhubService from its consumers
+    - Future: analytics pipeline, alerting system could also listen
+
+9.4 SERVICE: marketDataGateway
+──────────────────────────────
+
+  Purpose:
+    Bridge EventEmitter events from finnhubService to Redis Pub/Sub.
+    This is the decoupling layer between data ingestion and delivery.
+
+  Redis Pub/Sub Flow:
+    priceEmitter.on('priceUpdate', (updates) => {
+      publisher.publish('market:prices', JSON.stringify({
+        type: 'priceUpdate',
+        data: updates,
+        timestamp: Date.now()
+      }));
+    });
+
+  Decoupling Benefits:
+    Without gateway:  finnhubService → Socket.io (direct)
+    With gateway:     finnhubService → EventEmitter → Redis → Socket.io
+
+  Why the extra layer?
+
+  1. Multiple Consumers: Redis Pub/Sub allows ANY subscriber to receive
+     price updates — not just Socket.io. Future consumers include:
+     - BullMQ workers for snapshots
+     - Analytics pipelines
+     - External microservices
+
+  2. Horizontal Scaling: With Redis as the intermediary, you can run
+     multiple Express servers. All of them subscribe to the same Redis
+     channel and broadcast to their connected clients.
+
+  3. Process Isolation: If Socket.io crashes, data ingestion continues.
+     If Finnhub disconnects, Redis Pub/Sub still works (just no new data).
+
+  4. Debugging: You can subscribe to the Redis channel with redis-cli
+     to see raw market data without touching the application code:
+       docker-compose exec redis redis-cli SUBSCRIBE market:prices
+
+  Scalability Benefits:
+    Single server:   finnhubService → eventEmitter → gateway → Redis → io
+    Multiple servers: Same Redis → each server's io broadcasts to its clients
+
+    This is the standard architecture used by production systems like
+    trading platforms, chat applications, and real-time dashboards.
+
+9.5 SERVICE: readinessEngine
+────────────────────────────
+
+  Scoring Formula:
+
+  ┌──────────────────────┬────────┬──────────────────────────────┐
+  │ Factor               │ Weight │ Calculation                  │
+  ├──────────────────────┼────────┼──────────────────────────────┤
+  │ Savings Rate          │ 40%    │ (savings / income) * 100     │
+  │ Budget Adherence      │ 30%    │ (withinBudget / total) * 100 │
+  │ Subscription Burden   │ 20%    │ (1 - subCost/income) * 100   │
+  │ Spending Consistency  │ 10%    │ (1 - |diff|/max) * 100       │
+  └──────────────────────┴────────┴──────────────────────────────┘
+
+  Total Score = sum of (each factor's score * its weight)
+  Range: 0 to 100
+
+  Calculation Flow:
+
+  Input: {
+    monthlyIncome: 5000,
+    monthlyExpenses: 3500,
+    monthlySavings: 1500,
+    budgetAdherence: 0.8,
+    subscriptionBurden: 0.15,
+    spendingConsistency: 0.9
+  }
+
+  Step 1: Savings Rate
+    savingsRate = 1500 / 5000 = 0.3
+    savingsScore = 0.3 * 100 = 30
+    weighted = 30 * 0.4 = 12
+
+  Step 2: Budget Adherence
+    adherenceScore = 0.8 * 100 = 80
+    weighted = 80 * 0.3 = 24
+
+  Step 3: Subscription Burden (INVERTED — lower is better)
+    burdenScore = (1 - 0.15) * 100 = 85
+    weighted = 85 * 0.2 = 17
+
+  Step 4: Spending Consistency
+    consistencyScore = 0.9 * 100 = 90
+    weighted = 90 * 0.1 = 9
+
+  Total Score = 12 + 24 + 17 + 9 = 62 → "Improving"
+
+  Status Generation:
+    Score >= 70 → "Ready"      (student can start paper trading)
+    Score >= 40 → "Improving"  (getting there, needs work)
+    Score <  40 → "Beginner"   (focus on basics first)
+
+  Reasoning Behind Weights:
+    40% Savings: The most important indicator. If you can't save money,
+                 you can't invest. Period.
+    30% Budget:  Following budgets shows financial discipline — a
+                 prerequisite for investment discipline.
+    20% Subs:    High subscription burden means less available capital
+                 and potentially poor spending habits.
+    10% Consistency: Consistent spending patterns indicate financial
+                     stability, but it's less critical than the others.
+
+9.6 SERVICE: portfolioValuationService
+──────────────────────────────────────
+
+  Portfolio Calculations:
+
+  For each holding:
+    costBasis    = quantity * avgBuyPrice       (what you paid)
+    currentValue = quantity * currentPrice      (what it's worth now)
+    gainLoss     = currentValue - costBasis     (profit or loss)
+    gainLossPct  = (gainLoss / costBasis) * 100 (percentage)
+
+  Overall:
+    holdingsValue = sum of all currentValues
+    portfolioValue = cashBalance + holdingsValue
+    totalPnL = holdingsValue - totalCostBasis
+    totalPnLPct = (totalPnL / totalCostBasis) * 100
+
+  Graceful Handling of Missing Prices:
+    If a stock's price isn't available (Finnhub hasn't sent data yet),
+    currentPrice is set to null and currentValue falls back to costBasis.
+    This prevents portfolio valuation from breaking during startup.
+
+  Business Logic:
+    The service is a pure function — it takes a portfolio object and
+    a prices map, and returns computed values. It doesn't read from
+    the database or any external source. This makes it:
+    1. Testable: Pass mock data, get predictable results
+    2. Reusable: Controllers and BullMQ jobs can both call it
+    3. Deterministic: Same inputs always produce same outputs
+
+
+================================================================================
+                     SECTION 10: REDIS CONCEPTS USED
+================================================================================
+
+10.1 REDIS BASICS
+─────────────────
+
+  Redis (Remote Dictionary Server) is an in-memory data structure store.
+  It supports strings, lists, sets, hashes, sorted sets, and more.
+
+  Key characteristics:
+  - In-memory: All data lives in RAM (extremely fast, microsecond reads)
+  - Single-threaded: No lock contention, sequential command execution
+  - Persistence optional: Can snapshot to disk (RDB) or log (AOF)
+  - Pub/Sub: Built-in publish/subscribe messaging
+
+  In BudgetBuddy, Redis is used for TWO purposes:
+  1. Caching (existing): Transaction summaries, subscriptions, overviews
+     (config/redis.js → regular GET/SET commands)
+  2. Pub/Sub (new): Real-time market data distribution
+     (config/redisPubSub.js → PUBLISH/SUBSCRIBE commands)
+
+10.2 PUB/SUB (PUBLISH / SUBSCRIBE)
+───────────────────────────────────
+
+  Pub/Sub is a messaging pattern where:
+  - Publishers send messages to a CHANNEL (not to specific recipients)
+  - Subscribers listen to channels and receive ALL messages published
+
+  It's like a radio station:
+  - The DJ (publisher) broadcasts on a frequency (channel)
+  - Anyone with a radio (subscriber) tuned to that frequency hears it
+  - The DJ doesn't know or care who's listening
+
+  In our implementation:
+
+  Publisher: marketDataGateway.js
+    publisher.publish('market:prices', JSON.stringify(priceData))
+
+  Subscriber: server.js
+    subscriber.subscribe('market:prices')
+    subscriber.on('message', (channel, message) => {
+      io.emit('priceUpdate', JSON.parse(message))
+    })
+
+  Channel: 'market:prices'
+
+10.3 MESSAGE BROKER CONCEPT
+───────────────────────────
+
+  A message broker is an intermediary that receives messages from
+  producers and delivers them to consumers. Redis Pub/Sub acts as
+  a lightweight message broker.
+
+  In a traditional message broker (like RabbitMQ or Kafka):
+  - Messages can be persisted
+  - Messages can be acknowledged
+  - Failed deliveries can be retried
+
+  Redis Pub/Sub is simpler:
+  - Messages are fire-and-forget
+  - If no subscriber is listening, the message is lost
+  - No message persistence or acknowledgment
+
+  This is FINE for market data because:
+  - Price updates are continuous (a lost update is replaced in seconds)
+  - We maintain a latestPrices cache as the source of truth
+  - Real-time data is inherently ephemeral
+
+10.4 PRODUCER / CONSUMER
+─────────────────────────
+
+  Producer: marketDataGateway.js
+    Receives price updates from finnhubService (via EventEmitter)
+    Produces messages by publishing to Redis channel
+
+  Consumer: server.js (Redis subscriber → Socket.io bridge)
+    Subscribes to Redis channel
+    Consumes messages by forwarding to Socket.io
+
+  This pattern allows:
+  - Adding more consumers without changing the producer
+  - Running the producer and consumer on different servers
+  - Monitoring the channel independently (redis-cli SUBSCRIBE)
+
+10.5 CHANNELS
+─────────────
+
+  A channel is a named message stream in Redis Pub/Sub.
+
+  Our channel: 'market:prices'
+  Defined in: config/redisPubSub.js as MARKET_CHANNEL constant
+
+  Message format on this channel:
+  {
+    "type": "priceUpdate",
+    "data": {
+      "AAPL": { "price": 300.26, "volume": 40, "timestamp": 1781631022549 }
+    },
+    "timestamp": 1781631022413
+  }
+
+10.6 WHY NOT DIRECT SOCKET.IO BROADCASTING?
+────────────────────────────────────────────
+
+  Alternative: finnhubService → directly emit to Socket.io
+
+  Problems with direct approach:
+
+  1. Tight Coupling: finnhubService would need a reference to the io
+     object. If Socket.io is refactored, finnhubService must change.
+
+  2. No Horizontal Scaling: With multiple Express servers behind a
+     load balancer, each server has its own Socket.io instance. Only
+     the server running finnhubService would broadcast updates.
+
+     With Redis: Server 1 (runs finnhub) → publishes to Redis
+                 Server 1, 2, 3 all subscribe → all broadcast to clients
+
+  3. No Additional Consumers: Without Redis, adding a BullMQ job or
+     analytics pipeline requires modifying finnhubService.
+
+  4. No Debugging: You can't independently monitor the data flow.
+     With Redis: redis-cli SUBSCRIBE market:prices shows raw data.
+
+  Interview Answer:
+    "I used Redis Pub/Sub instead of direct Socket.io broadcasting
+    for three reasons: horizontal scalability, decoupling, and
+    observability. With Redis as the intermediary, I can run multiple
+    server instances behind a load balancer, each subscribing to the
+    same Redis channel. I can add new consumers (like analytics or
+    job queues) without modifying the data producer. And I can debug
+    the data flow by subscribing to the channel with redis-cli."
+
+
+================================================================================
+                    SECTION 11: WEBSOCKET CONCEPTS
+================================================================================
+
+11.1 WHAT ARE WEBSOCKETS?
+─────────────────────────
+
+  WebSocket is a communication protocol that provides full-duplex
+  (bidirectional) communication over a single TCP connection.
+
+  Unlike HTTP (request-response), WebSocket:
+  - Keeps the connection OPEN after the initial handshake
+  - Either side can send messages at any time
+  - No overhead of HTTP headers on every message
+  - Ideal for real-time applications
+
+11.2 DIFFERENCE BETWEEN REST AND WEBSOCKETS
+───────────────────────────────────────────
+
+  ┌──────────────────┬──────────────────────┬──────────────────────┐
+  │ Aspect            │ REST API             │ WebSocket            │
+  ├──────────────────┼──────────────────────┼──────────────────────┤
+  │ Connection        │ Short-lived          │ Persistent           │
+  │ Direction         │ Client → Server      │ Bidirectional        │
+  │ Protocol          │ HTTP                 │ ws:// or wss://      │
+  │ Headers           │ On every request     │ Only on handshake    │
+  │ Latency           │ Higher (new conn)    │ Lower (reuses conn)  │
+  │ Server Push       │ Not supported        │ Supported            │
+  │ Use Case          │ CRUD operations      │ Real-time updates    │
+  │ Scaling           │ Stateless            │ Stateful             │
+  └──────────────────┴──────────────────────┴──────────────────────┘
+
+  In InvestLab, BOTH are used:
+  - REST: For buy/sell trades, portfolio lookup, readiness score
+  - WebSocket: For real-time price updates from Finnhub + to clients
+
+11.3 PERSISTENT CONNECTION
+──────────────────────────
+
+  The WebSocket connection between our server and Finnhub stays open
+  indefinitely (until network failure or server restart).
+
+  Benefits:
+  - No reconnection overhead for each price update
+  - Finnhub sends data immediately as trades happen
+  - We receive thousands of messages per minute on one connection
+
+  Our Implementation:
+  - ws library creates the WebSocket client connection to Finnhub
+  - socket.io manages WebSocket connections from browser clients
+
+11.4 EVENT-DRIVEN COMMUNICATION
+───────────────────────────────
+
+  Both Finnhub WebSocket and Socket.io use event-driven communication:
+
+  Finnhub sends events:
+    { type: 'trade', data: [{ s: 'AAPL', p: 300.26, ... }] }
+
+  Our server emits Socket.io events:
+    socket.emit('priceSnapshot', latestPrices)
+    io.emit('priceUpdate', updatedPrices)
+
+  Clients listen for events:
+    socket.on('priceUpdate', (data) => { /* update UI */ })
+
+11.5 WHY FINNHUB USES WEBSOCKETS
+─────────────────────────────────
+
+  Stock prices change hundreds of times per second. If Finnhub used
+  REST APIs, clients would need to poll constantly:
+
+  Polling approach:
+    Every 1 second: GET /api/prices → response with all prices
+    Problem: 86,400 requests per day PER CLIENT
+    Problem: Most responses contain NO CHANGES
+    Problem: High latency (up to 1 second stale data)
+
+  WebSocket approach:
+    One connection: Server pushes ONLY when prices change
+    Benefit: Zero wasted requests
+    Benefit: Sub-millisecond latency
+    Benefit: Lower bandwidth (no HTTP headers on every message)
+
+11.6 WHY SOCKET.IO WAS USED (vs raw WebSockets)
+─────────────────────────────────────────────────
+
+  Socket.io provides:
+  1. Auto-reconnection: If client disconnects, it reconnects automatically
+  2. Fallback: Uses long-polling if WebSocket isn't available
+  3. Rooms/Namespaces: Can broadcast to specific groups of clients
+  4. Event System: Named events (priceUpdate, priceSnapshot) instead
+     of raw message parsing
+  5. Binary Support: Can send binary data if needed
+  6. Heartbeat: Built-in ping/pong to detect dead connections
+
+  For Finnhub connection we use raw 'ws' library because:
+  - It's a server-to-server connection (no browser involved)
+  - We don't need reconnection handling from a library (we built our own)
+  - Lower overhead than socket.io-client
+  - Finnhub's API expects raw WebSocket connections
+
+  Interview Answer:
+    "I used Socket.io for server-to-client communication because it
+    provides auto-reconnection, fallback to long-polling, and a named
+    event system. For the server-to-Finnhub connection, I used the raw
+    'ws' library because it's lighter weight and Finnhub expects a
+    standard WebSocket connection."
+
+
+================================================================================
+                SECTION 12: EVENT-DRIVEN ARCHITECTURE
+================================================================================
+
+12.1 EVENTEMITTER
+─────────────────
+
+  EventEmitter is a Node.js core module that implements the
+  Observer pattern. It allows objects to:
+  1. Emit named events
+  2. Register listeners for those events
+  3. Execute listeners when events are emitted
+
+  In our code:
+
+    // finnhubService.js — EMIT events
+    const priceEmitter = new EventEmitter();
+    priceEmitter.emit('priceUpdate', updates);
+
+    // marketDataGateway.js — LISTEN for events
+    priceEmitter.on('priceUpdate', (updates) => {
+      publisher.publish(MARKET_CHANNEL, JSON.stringify({ ... }));
+    });
+
+12.2 EVENT PUBLISHING
+─────────────────────
+
+  Where events are published:
+
+  1. finnhubService.js emits 'priceUpdate' on priceEmitter
+     Trigger: When Finnhub sends a trade message with updated prices
+     Data: Object containing only the changed symbols
+
+  2. marketDataGateway.js publishes to Redis 'market:prices'
+     Trigger: When it receives 'priceUpdate' from priceEmitter
+     Data: JSON payload with type, data, and timestamp
+
+12.3 EVENT CONSUMPTION
+──────────────────────
+
+  Where events are consumed:
+
+  1. marketDataGateway.js listens to priceEmitter 'priceUpdate'
+     Action: Publishes to Redis Pub/Sub
+
+  2. server.js listens to Redis subscriber 'message' event
+     Action: Broadcasts to Socket.io clients
+
+  3. Socket.io clients listen to 'priceUpdate' event
+     Action: Update UI (future)
+
+12.4 COMPLETE EVENT FLOW DIAGRAM
+────────────────────────────────
+
+  Finnhub Trade Event
+         │
+         ▼
+  finnhubService: ws.on('message')
+         │
+         │  latestPrices.set(symbol, { price, volume, timestamp })
+         │
+         ▼
+  priceEmitter.emit('priceUpdate', { AAPL: { price: 300.26 } })
+         │
+         ├──────────────────────────────────────────────┐
+         ▼                                              ▼
+  marketDataGateway:                              (future consumers:
+  priceEmitter.on('priceUpdate')                  analytics, alerting)
+         │
+         │  publisher.publish('market:prices', payload)
+         ▼
+  Redis Pub/Sub Channel: 'market:prices'
+         │
+         ▼
+  server.js: subscriber.on('message')
+         │
+         │  io.emit('priceUpdate', data)
+         ▼
+  Socket.io Clients (all connected browsers)
+         │
+         ▼
+  React Component (future): socket.on('priceUpdate')
+
+12.5 INTERVIEW RELEVANCE
+─────────────────────────
+
+  Event-driven architecture is a top interview topic because:
+
+  1. It demonstrates understanding of the Observer pattern
+  2. It shows knowledge of decoupling and loose coupling
+  3. It's used by most modern real-time systems
+  4. It relates to system design concepts (Kafka, RabbitMQ, etc.)
+
+  Interview Answer:
+    "I used event-driven architecture to decouple the market data
+    pipeline into three independent stages: ingestion (finnhubService),
+    distribution (marketDataGateway via Redis), and delivery (Socket.io
+    in server.js). Each stage only knows about events, not about the
+    other stages' implementations. This means I can add new consumers
+    like analytics pipelines or job queues without modifying existing
+    code — I just add another event listener."
+
+
+================================================================================
+                   SECTION 13: AUTHENTICATION FLOW
+================================================================================
+
+13.1 JWT FLOW IN INVESTLAB
+──────────────────────────
+
+  Step 1: User logs in → POST /api/auth/login
+    Server generates JWT: jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '15m' })
+    Returns token in response body
+
+  Step 2: Client stores token (localStorage or state)
+
+  Step 3: Client sends request with token:
+    GET /api/investlab/portfolio
+    Headers: { Authorization: "Bearer eyJhbGciOiJ..." }
+
+  Step 4: protect middleware processes the request:
+    1. Extract token from header
+    2. jwt.verify(token, JWT_SECRET) → decoded = { id: "6a318866..." }
+    3. User.findById(decoded.id).select('-password') → req.user
+    4. next()
+
+  Step 5: Controller accesses req.user._id for all database queries
+
+13.2 MIDDLEWARE EXECUTION
+─────────────────────────
+
+  For GET /api/investlab/portfolio:
+
+  Request
+    ↓
+  cors()               ← Allow cross-origin
+    ↓
+  express.json()       ← Parse body
+    ↓
+  cookieParser()       ← Parse cookies
+    ↓
+  router.use(protect)  ← JWT verification
+    ↓
+  getPortfolio()       ← Controller logic
+    ↓
+  Response
+
+13.3 USER AUTHORIZATION (PORTFOLIO OWNERSHIP)
+──────────────────────────────────────────────
+
+  Every controller query is scoped to the authenticated user:
+
+  Portfolio:  Portfolio.findOne({ userId: req.user._id })
+  Trades:    Trade.find({ userId: req.user._id })
+  Income:    Transaction.aggregate([{ $match: { userId: req.user._id } }])
+  Budgets:   Budget.find({ userId: req.user._id })
+
+  This ensures:
+  - User A cannot see User B's portfolio
+  - User A cannot buy/sell in User B's account
+  - User A cannot view User B's trades or readiness score
+
+  There is no role-based access control (RBAC) — all InvestLab users
+  have the same permissions. The JWT simply identifies WHO the user is.
+
+13.4 REQUEST LIFECYCLE (COMPLETE)
+─────────────────────────────────
+
+  POST /api/investlab/buy (with body: { symbol: "AAPL", quantity: 5 })
+
+  1. TCP connection → Express server (port 5000)
+  2. cors() → Check Origin header against CLIENT_URL
+  3. express.json() → Parse body → req.body = { symbol: "AAPL", quantity: 5 }
+  4. cookieParser() → Parse cookies (not used here)
+  5. Route matching → /api/investlab/buy matches investlabRoutes
+  6. protect() middleware:
+     a. Extract "Bearer eyJ..." from Authorization header
+     b. jwt.verify() → { id: "6a318866..." }
+     c. User.findById() → req.user = { _id, name, email, xp, level }
+     d. next()
+  7. buyStock() controller:
+     a. Validate symbol, quantity
+     b. getLatestPrices() → { AAPL: { price: 300.26 } }
+     c. Portfolio.findOne({ userId: req.user._id })
+     d. Check cashBalance >= total
+     e. Update holdings (weighted avg)
+     f. portfolio.save()
+     g. Trade.create()
+  8. res.status(201).json({ message, trade, cashBalance })
+  9. TCP response → Client
+
+
+================================================================================
+                       SECTION 14: API REFERENCE
+================================================================================
+
+14.1 GET /api/investlab/readiness
+─────────────────────────────────
+
+  Method:    GET
+  URL:       /api/investlab/readiness
+  Purpose:   Calculate investment readiness score from existing financial data
+  Auth:      Required (Bearer JWT)
+
+  Request Body:   None
+
+  Response Body (200 OK):
+  {
+    "score": 55,
+    "status": "Improving",
+    "breakdown": {
+      "savingsRate": {
+        "raw": 0,
+        "score": 0,
+        "weight": 0.4,
+        "weighted": 0
+      },
+      "budgetAdherence": {
+        "raw": 1,
+        "score": 100,
+        "weight": 0.3,
+        "weighted": 30
+      },
+      "subscriptionBurden": {
+        "raw": 0,
+        "score": 100,
+        "weight": 0.2,
+        "weighted": 20
+      },
+      "spendingConsistency": {
+        "raw": 0.5,
+        "score": 50,
+        "weight": 0.1,
+        "weighted": 5
+      }
+    },
+    "inputs": {
+      "monthlyIncome": 0,
+      "monthlyExpenses": 0,
+      "monthlySavings": 0,
+      "budgetAdherence": 1,
+      "subscriptionBurden": 0,
+      "spendingConsistency": 0.5
+    }
+  }
+
+  Status Codes:
+    200 OK              — Score calculated successfully
+    401 Unauthorized     — Missing or invalid JWT
+    500 Server Error     — Internal error
+
+14.2 GET /api/investlab/portfolio
+─────────────────────────────────
+
+  Method:    GET
+  URL:       /api/investlab/portfolio
+  Purpose:   Get user portfolio with live market valuation
+  Auth:      Required (Bearer JWT)
+
+  Request Body:   None
+
+  Response Body (200 OK):
+  {
+    "_id": "6a318866604474ecdd409bba",
+    "userId": "6a318866604474ecdd409bb9",
+    "cashBalance": 8498.70,
+    "holdings": [
+      {
+        "symbol": "AAPL",
+        "quantity": 3,
+        "avgBuyPrice": 300.26,
+        "currentPrice": 300.31,
+        "costBasis": 900.78,
+        "currentValue": 900.93,
+        "gainLoss": 0.15,
+        "gainLossPct": 0.02
+      }
+    ],
+    "holdingsValue": 900.93,
+    "portfolioValue": 9399.63,
+    "totalPnL": 0.15,
+    "totalPnLPct": 0.02,
+    "updatedAt": "2026-06-16T17:32:09.579Z"
+  }
+
+  Status Codes:
+    200 OK              — Portfolio returned (created if didn't exist)
+    401 Unauthorized     — Missing or invalid JWT
+    500 Server Error     — Internal error
+
+14.3 POST /api/investlab/buy
+────────────────────────────
+
+  Method:    POST
+  URL:       /api/investlab/buy
+  Purpose:   Execute a paper trade buy order
+  Auth:      Required (Bearer JWT)
+
+  Request Body:
+  {
+    "symbol": "AAPL",
+    "quantity": 5
+  }
+
+  Response Body (201 Created):
+  {
+    "message": "Bought 5 shares of AAPL at $300.26",
+    "trade": {
+      "_id": "6a31888e604474ecdd409bbb",
+      "userId": "6a318866604474ecdd409bb9",
+      "symbol": "AAPL",
+      "type": "buy",
+      "quantity": 5,
+      "price": 300.26,
+      "total": 1501.30,
+      "timestamp": "2026-06-16T17:31:58.386Z"
+    },
+    "cashBalance": 8498.70
+  }
+
+  Error Responses:
+    400 { "message": "symbol and quantity are required" }
+    400 { "message": "Symbol XYZ is not supported. Available: AAPL, MSFT, ..." }
+    400 { "message": "quantity must be a positive integer" }
+    400 { "message": "Insufficient balance", "required": 15000, "available": 10000 }
+    401 { "message": "Not authorized" }
+    503 { "message": "Price data not available for AAPL. Market data may still be loading." }
+
+14.4 POST /api/investlab/sell
+─────────────────────────────
+
+  Method:    POST
+  URL:       /api/investlab/sell
+  Purpose:   Execute a paper trade sell order
+  Auth:      Required (Bearer JWT)
+
+  Request Body:
+  {
+    "symbol": "AAPL",
+    "quantity": 2
+  }
+
+  Response Body (201 Created):
+  {
+    "message": "Sold 2 shares of AAPL at $300.31",
+    "trade": {
+      "_id": "6a318899604474ecdd409bbc",
+      "userId": "6a318866604474ecdd409bb9",
+      "symbol": "AAPL",
+      "type": "sell",
+      "quantity": 2,
+      "price": 300.31,
+      "total": 600.62,
+      "timestamp": "2026-06-16T17:32:09.590Z"
+    },
+    "cashBalance": 9099.32
+  }
+
+  Error Responses:
+    400 { "message": "symbol and quantity are required" }
+    400 { "message": "Portfolio not found. Buy stocks first." }
+    400 { "message": "You do not hold any TSLA shares" }
+    400 { "message": "Insufficient shares", "requested": 10, "available": 3 }
+    401 { "message": "Not authorized" }
+    503 { "message": "Price data not available..." }
+
+14.5 GET /api/investlab/trades
+──────────────────────────────
+
+  Method:    GET
+  URL:       /api/investlab/trades?page=1&limit=50
+  Purpose:   Get paginated trade history
+  Auth:      Required (Bearer JWT)
+
+  Query Parameters:
+    page    (optional, default: 1, min: 1)
+    limit   (optional, default: 50, max: 100)
+
+  Response Body (200 OK):
+  {
+    "trades": [
+      {
+        "_id": "6a318899604474ecdd409bbc",
+        "symbol": "AAPL",
+        "type": "sell",
+        "quantity": 2,
+        "price": 300.31,
+        "total": 600.62,
+        "timestamp": "2026-06-16T17:32:09.590Z"
+      },
+      {
+        "_id": "6a31888e604474ecdd409bbb",
+        "symbol": "AAPL",
+        "type": "buy",
+        "quantity": 5,
+        "price": 300.26,
+        "total": 1501.30,
+        "timestamp": "2026-06-16T17:31:58.386Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 50,
+      "totalCount": 2,
+      "totalPages": 1
+    }
+  }
+
+
+================================================================================
+                   SECTION 15: FULL END-TO-END FLOWS
+================================================================================
+
+15.1 USER BUYS A STOCK — COMPLETE FLOW
+───────────────────────────────────────
+
+  User clicks "Buy 5 AAPL"
+         │
+         ▼
+  Frontend (future): POST /api/investlab/buy
+  Body: { symbol: "AAPL", quantity: 5 }
+  Headers: { Authorization: "Bearer eyJ..." }
+         │
+         ▼
+  Express receives request
+         │
+         ▼
+  cors() → express.json() → cookieParser()
+         │
+         ▼
+  Route: /api/investlab/buy → protect middleware
+         │
+         ▼
+  protect(): jwt.verify() → User.findById() → req.user
+         │
+         ▼
+  buyStock() controller:
+    1. Validate symbol = "AAPL" ✓ (in SYMBOLS array)
+    2. Validate quantity = 5 ✓ (positive integer)
+    3. getLatestPrices() → AAPL price = $300.26
+    4. total = 300.26 * 5 = $1,501.30
+    5. Portfolio.findOne({ userId }) → { cashBalance: 10000, holdings: [] }
+    6. cashBalance (10000) >= total (1501.30) ✓
+    7. No existing AAPL holding → push { symbol: "AAPL", qty: 5, avg: 300.26 }
+    8. cashBalance = 10000 - 1501.30 = 8498.70
+    9. portfolio.save() → MongoDB write
+   10. Trade.create({ type: "buy", symbol: "AAPL", qty: 5, ... }) → MongoDB write
+         │
+         ▼
+  Response: 201 Created
+  {
+    "message": "Bought 5 shares of AAPL at $300.26",
+    "trade": { ... },
+    "cashBalance": 8498.70
+  }
+
+15.2 USER CHECKS READINESS — COMPLETE FLOW
+───────────────────────────────────────────
+
+  User opens InvestLab Readiness page
+         │
+         ▼
+  Frontend: GET /api/investlab/readiness
+         │
+         ▼
+  protect() → verify JWT → req.user
+         │
+         ▼
+  getReadiness():
+    1. MongoDB: Aggregate income transactions (current month)
+    2. MongoDB: Aggregate expense transactions (current month)
+    3. MongoDB: Fetch budget limits for current month
+    4. MongoDB: Aggregate expenses per category
+    5. MongoDB: Count categories within budget → budgetAdherence
+    6. subscriptionService: detectSubscriptions() → totalMonthly
+    7. MongoDB: Aggregate last month's expenses → spendingConsistency
+    8. readinessEngine: calculateReadiness(all inputs) → { score, status }
+         │
+         ▼
+  Response: 200 OK
+  { score: 72, status: "Ready", breakdown: {...}, inputs: {...} }
+
+15.3 REAL-TIME PRICE UPDATE — COMPLETE FLOW
+────────────────────────────────────────────
+
+  Finnhub sends trade data for AAPL
+         │
+         ▼
+  finnhubService: ws.on('message')
+    Parse: { type: 'trade', data: [{ s: 'AAPL', p: 300.31, v: 40, t: ... }] }
+    Update: latestPrices.set('AAPL', { price: 300.31, volume: 40, ... })
+         │
+         ▼
+  priceEmitter.emit('priceUpdate', { AAPL: { price: 300.31, ... } })
+         │
+         ▼
+  marketDataGateway: priceEmitter.on('priceUpdate')
+    publisher.publish('market:prices', JSON.stringify({
+      type: 'priceUpdate', data: { AAPL: { price: 300.31 } }, timestamp: ...
+    }))
+         │
+         ▼
+  Redis Pub/Sub: Channel 'market:prices' receives message
+         │
+         ▼
+  server.js: subscriber.on('message')
+    io.emit('priceUpdate', parsedData)
+         │
+         ▼
+  ALL connected Socket.io clients receive the 'priceUpdate' event
+         │
+         ▼
+  React component (future): socket.on('priceUpdate', updateChart)
+
+15.4 NEW USER SIGNUP — PORTFOLIO CREATION FLOW
+───────────────────────────────────────────────
+
+  User submits signup form
+         │
+         ▼
+  POST /api/auth/signup → { name, email, password }
+         │
+         ▼
+  authController.signup():
+    1. Check if user exists → User.findOne({ email })
+    2. Hash password → bcrypt.hash()
+    3. Create user → User.create({ name, email, password: hashed })
+    4. Auto-create portfolio (fire-and-forget):
+       Portfolio.create({ userId: user._id })
+         .catch(err => console.error(...))  ← Never blocks signup
+    5. Generate JWT tokens (access + refresh)
+    6. Set refresh token cookie
+    7. Return user data + access token
+         │
+         ▼
+  User is logged in with a $10,000 paper trading portfolio ready
+
+
+================================================================================
+                     SECTION 16: DESIGN DECISIONS
+================================================================================
+
+16.1 WHY FINNHUB?
+─────────────────
+
+  Options Considered:
+  - Alpha Vantage: REST-only, requires polling, lower rate limits
+  - Yahoo Finance: Unofficial API, unreliable, rate limited
+  - IEX Cloud: Paid for real-time data
+  - Finnhub: Free tier with WebSocket support for real-time data
+
+  Decision: Finnhub
+  Reasons:
+  - Free WebSocket API for real-time trade data
+  - Supports up to 50 symbols on free tier (we use 6)
+  - Well-documented API
+  - Reliable uptime
+
+16.2 WHY WEBSOCKETS (for Finnhub)?
+───────────────────────────────────
+
+  Alternative: REST API polling every N seconds
+
+  Tradeoffs:
+  ┌──────────────────┬──────────────────────┬──────────────────────┐
+  │ Aspect            │ WebSocket            │ REST Polling         │
+  ├──────────────────┼──────────────────────┼──────────────────────┤
+  │ Latency           │ Milliseconds         │ Seconds (poll freq)  │
+  │ Bandwidth         │ Low (data only)      │ High (HTTP overhead) │
+  │ API Calls         │ 1 connection         │ N calls/minute       │
+  │ Rate Limits       │ Not a concern        │ Easily exceeded      │
+  │ Complexity        │ Reconnection logic   │ Simple but wasteful  │
+  └──────────────────┴──────────────────────┴──────────────────────┘
+
+  Decision: WebSocket
+  For real-time market data, WebSocket is the industry standard.
+
+16.3 WHY REDIS PUB/SUB?
+────────────────────────
+
+  Alternative: Direct EventEmitter → Socket.io (no Redis)
+
+  Tradeoffs:
+  - Without Redis: Simpler, but limited to single-server deployment
+  - With Redis: Slightly more complex, but enables horizontal scaling
+
+  Decision: Redis Pub/Sub
+  Even though we're currently single-server, the architecture is
+  ready for multi-server deployment. The cost is just one extra
+  Redis connection — negligible.
+
+16.4 WHY A SERVICE LAYER?
+─────────────────────────
+
+  Alternative: Put all logic in controllers (fat controllers)
+
+  Decision: Service layer
+  - readinessEngine is a pure function — easily unit testable
+  - portfolioValuationService is reusable by future BullMQ jobs
+  - finnhubService encapsulates WebSocket complexity
+  - Controllers stay thin and focused on HTTP concerns
+
+16.5 WHY A SEPARATE PORTFOLIOSNAPSHOT MODEL?
+────────────────────────────────────────────
+
+  Alternative: Compute historical values from trades on-the-fly
+
+  Decision: Separate model
+  - Time-series data needs to be pre-computed and stored
+  - Computing portfolio value at past timestamps requires historical
+    price data (which we don't persist yet)
+  - Snapshots enable O(1) lookups for "what was my portfolio worth
+    on June 15?" instead of recomputing from trades + historical prices
+  - Will be populated by a BullMQ cron job in a future iteration
+
+16.6 WHY A SEPARATE TRADE COLLECTION?
+──────────────────────────────────────
+
+  Alternative: Embed trades inside Portfolio.trades array
+
+  Decision: Separate collection
+  - Trade history grows unboundedly (could reach thousands/millions)
+  - MongoDB has a 16MB document size limit
+  - Trades need independent pagination (skip/limit)
+  - Trades are append-only (never updated or deleted)
+  - Clean separation: Portfolio = current state, Trades = audit log
+
+
+================================================================================
+                   SECTION 17: SCALABILITY DISCUSSION
+================================================================================
+
+17.1 CURRENT ARCHITECTURE: 10 USERS
+────────────────────────────────────
+
+  Capacity:
+  - Single Express server handles everything
+  - Single Finnhub WebSocket connection (shared across all users)
+  - Single Redis instance for Pub/Sub and caching
+  - MongoDB handles ~100 queries/second easily
+  - Socket.io manages 10 persistent connections
+
+  Bottlenecks: NONE at this scale
+
+17.2 SCALING TO 100 USERS
+──────────────────────────
+
+  Changes Needed: NONE
+  - Same single-server architecture handles 100 users easily
+  - Socket.io can handle thousands of connections
+  - MongoDB queries are indexed
+  - Finnhub WebSocket is shared (one connection for all users)
+
+  Potential Concern: Redis Pub/Sub message volume
+  - At 100 users, all receive every price update
+  - Solution: Socket.io rooms for users who have the InvestLab page open
+
+17.3 SCALING TO 1,000 USERS
+────────────────────────────
+
+  Bottleneck 1: Socket.io connections per server
+  Solution: Add more Express servers behind a load balancer
+  Implementation:
+  - Use Redis adapter for Socket.io (socket.io-redis)
+  - All servers subscribe to same Redis Pub/Sub channel
+  - Each server broadcasts to its own connected clients
+
+  Bottleneck 2: MongoDB write throughput (buy/sell trades)
+  Solution: MongoDB handles this easily at 1,000 users
+  Note: If trades spike (e.g., market open), consider BullMQ job queue
+        to batch database writes
+
+  Bottleneck 3: Readiness calculation cost
+  Solution: Cache readiness scores in Redis with 5-minute TTL
+  Implementation: readiness:${userId} → JSON cached result
+
+17.4 SCALING TO 10,000 USERS
+─────────────────────────────
+
+  Bottleneck 1: Single Finnhub WebSocket connection
+  Solution: Still fine — one connection handles all symbols regardless
+            of user count. Finnhub sends data based on market activity,
+            not user count.
+
+  Bottleneck 2: Socket.io broadcasting
+  Solution:
+  - Multiple Express servers behind nginx/HAProxy
+  - Redis adapter for Socket.io cross-server communication
+  - Socket.io rooms: only broadcast to users on InvestLab pages
+
+  Bottleneck 3: MongoDB aggregation queries (readiness)
+  Solution:
+  - BullMQ background job recalculates readiness scores periodically
+  - Results cached in Redis (not computed on every API call)
+  - Read replicas for MongoDB
+
+  Bottleneck 4: Portfolio valuation with live prices
+  Solution:
+  - Compute valuations in BullMQ workers, not in request handlers
+  - Pre-compute and cache top-level portfolio values
+  - Serve from cache, refresh every 30 seconds
+
+  Architecture Evolution:
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  nginx / HAProxy (load balancer)                                │
+  │       │           │           │                                   │
+  │       ▼           ▼           ▼                                   │
+  │  Server 1     Server 2     Server 3                              │
+  │  (Express)    (Express)    (Express)                             │
+  │       │           │           │                                   │
+  │       └───────────┴───────────┘                                   │
+  │               │                                                   │
+  │               ▼                                                   │
+  │  ┌─────────────────────────┐                                     │
+  │  │ Redis (Pub/Sub + Cache)  │                                     │
+  │  └─────────────────────────┘                                     │
+  │               │                                                   │
+  │               ▼                                                   │
+  │  ┌─────────────────────────┐                                     │
+  │  │ MongoDB (replica set)    │                                     │
+  │  └─────────────────────────┘                                     │
+  │                                                                  │
+  │  ┌─────────────────────────┐                                     │
+  │  │ BullMQ Workers (separate │  ← snapshot jobs, readiness cache  │
+  │  │ processes or containers) │                                     │
+  │  └─────────────────────────┘                                     │
+  │                                                                  │
+  │  ┌─────────────────────────┐                                     │
+  │  │ Finnhub Service          │  ← Only ONE instance needed       │
+  │  │ (standalone or on one    │  ← Publishes to shared Redis      │
+  │  │  server)                 │                                     │
+  │  └─────────────────────────┘                                     │
+  └──────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                  SECTION 18: SYSTEM DESIGN CONCEPTS
+================================================================================
+
+18.1 CONCEPTS DEMONSTRATED IN INVESTLAB
+───────────────────────────────────────
+
+  ┌──────────────────────────┬──────────────────────────────────────┐
+  │ Concept                   │ Where Demonstrated                  │
+  ├──────────────────────────┼──────────────────────────────────────┤
+  │ Pub/Sub                   │ Redis market:prices channel         │
+  │ Event-Driven Architecture │ EventEmitter → Redis → Socket.io   │
+  │ WebSockets                │ Finnhub client + Socket.io server   │
+  │ Service Layer             │ readinessEngine, portfolioValuation │
+  │ Separation of Concerns    │ Route → Controller → Service        │
+  │ Scalability               │ Redis Pub/Sub enables multi-server  │
+  │ Real-Time Systems         │ Live market data pipeline           │
+  │ Background Processing     │ Future BullMQ snapshot jobs         │
+  │ Caching                   │ latestPrices in-memory Map          │
+  │ Message Broker            │ Redis as intermediary               │
+  │ Observer Pattern          │ EventEmitter (priceUpdate)          │
+  │ Lazy Initialization       │ Portfolio created on first access   │
+  │ Fire-and-Forget           │ Portfolio creation on signup        │
+  │ Weighted Average          │ avgBuyPrice calculation             │
+  │ Pagination                │ Trade history with skip/limit       │
+  │ Compound Indexes          │ { userId: 1, timestamp: -1 }       │
+  │ Exponential Backoff       │ Finnhub reconnection strategy      │
+  │ Graceful Degradation      │ Missing prices → fallback to cost  │
+  └──────────────────────────┴──────────────────────────────────────┘
+
+18.2 WHY INTERVIEWERS CARE ABOUT EACH CONCEPT
+──────────────────────────────────────────────
+
+  PUB/SUB:
+    Shows understanding of asynchronous messaging patterns.
+    Used by: Twitter feeds, chat apps, notification systems, stock tickers.
+    Interviewers want to know you can design loosely coupled systems.
+
+  EVENT-DRIVEN ARCHITECTURE:
+    Shows understanding of reactive programming.
+    Used by: Microservices (Kafka), serverless (Lambda triggers), IoT.
+    Demonstrates ability to handle high-throughput, low-latency systems.
+
+  WEBSOCKETS:
+    Shows understanding of real-time communication.
+    Used by: Chat (Slack, Discord), trading platforms, live dashboards.
+    Interviewers test this in "Design a chat system" questions.
+
+  SERVICE LAYER:
+    Shows understanding of clean architecture.
+    Used by: Every production backend (Spring, Django, Express).
+    Demonstrates ability to write maintainable, testable code.
+
+  SEPARATION OF CONCERNS:
+    Shows maturity as a developer.
+    Route handles URL, Controller handles HTTP, Service handles logic.
+    Interviewers look for this in code review exercises.
+
+  CACHING:
+    Shows understanding of performance optimization.
+    latestPrices is an L1 cache (in-memory), Redis is L2 (distributed).
+    Common interview question: "How would you reduce latency?"
+
+  EXPONENTIAL BACKOFF:
+    Shows understanding of fault tolerance.
+    Used by: AWS SDKs, Google APIs, any HTTP client library.
+    Interview question: "How do you handle transient failures?"
+
+
+================================================================================
+            SECTION 19: TECHNICAL INTERVIEW QUESTIONS & ANSWERS
+================================================================================
+
+── BACKEND ──────────────────────────────────────────────────────────────────────
+
+Q: How do you keep controllers thin?
+A: I separate concerns into layers. Controllers handle HTTP request/response —
+   extracting input, calling services, and formatting output. Business logic
+   lives in services. For example, my readinessEngine is a pure function that
+   takes financial inputs and returns a score. The controller gathers data from
+   MongoDB, passes it to the service, and returns the result. This makes the
+   service independently testable and reusable.
+
+Q: How do you handle errors in your APIs?
+A: Every controller is wrapped in a try/catch block. For validation errors,
+   I return specific 400-level status codes with descriptive messages (e.g.,
+   400 "Insufficient balance" with the required and available amounts). For
+   unexpected errors, I return 500 with the error message. For service
+   unavailability (like missing price data), I use 503 to signal a temporary
+   condition. I also use fire-and-forget patterns (like Portfolio creation on
+   signup) where failure is logged but doesn't block the main flow.
+
+── MONGODB ──────────────────────────────────────────────────────────────────────
+
+Q: Why did you use MongoDB instead of PostgreSQL?
+A: Three reasons. First, the existing BudgetBuddy codebase uses MongoDB, so
+   consistency across the project was important. Second, the Portfolio schema
+   benefits from embedding — holdings are stored as subdocuments inside the
+   portfolio document, which gives atomic updates when buying/selling stocks.
+   In PostgreSQL, this would require a separate holdings table and JOIN
+   operations. Third, MongoDB's flexible schema lets me iterate quickly on
+   the data model during development.
+
+Q: Explain your indexing strategy.
+A: I created compound indexes on { userId: 1, timestamp: -1 } for trades and
+   snapshots. The userId field with ascending order supports equality matching
+   (find all trades for user X), and timestamp with descending order supports
+   sorting (newest first). This follows the ESR (Equality, Sort, Range) pattern
+   recommended by MongoDB. For the Portfolio collection, I use a unique index on
+   userId to enforce the one-portfolio-per-user business rule and enable O(1)
+   lookups.
+
+Q: Why did you embed holdings inside Portfolio instead of a separate collection?
+A: Holdings have a bounded cardinality (max 6 symbols), are always accessed with
+   the portfolio (never independently), and need atomic updates with cashBalance.
+   Embedding avoids joins and provides transactional atomicity — when I buy a
+   stock, I update both holdings and cashBalance in a single document write.
+   Trades, on the other hand, are in a separate collection because they grow
+   unboundedly and need independent pagination.
+
+Q: What is the aggregation pipeline and how did you use it?
+A: MongoDB's aggregation pipeline processes documents through sequential stages.
+   I used it in the readiness endpoint to compute: (1) $match to filter
+   transactions by userId, type, and date range, (2) $group with $sum to
+   calculate total income and expenses, (3) $group by category for per-category
+   expense totals. The advantage over fetching all documents is that aggregation
+   runs on the database server, reducing network transfer and Node.js memory
+   usage. I ran multiple aggregations in parallel using Promise.all() for
+   optimal performance.
+
+── REDIS ────────────────────────────────────────────────────────────────────────
+
+Q: Why do you use two separate Redis connections for Pub/Sub?
+A: Redis has a protocol-level limitation: once a connection enters subscriber
+   mode (after calling SUBSCRIBE), it can ONLY receive messages — it cannot
+   execute commands like GET, SET, or PUBLISH. So I need three connections total:
+   one for caching (the existing redis.js client for GET/SET), one for
+   publishing (marketDataGateway publishes price updates), and one for
+   subscribing (server.js subscribes to receive those updates). The publisher
+   and subscriber are in config/redisPubSub.js; the cache client is unchanged
+   in config/redis.js.
+
+Q: What happens if Redis goes down?
+A: For Pub/Sub: Price updates stop flowing to Socket.io clients. Finnhub
+   data is still ingested and cached in the latestPrices Map (in-memory).
+   REST API endpoints (buy, sell, portfolio) continue working because they
+   read prices from the in-memory cache, not Redis. For caching: The existing
+   BudgetBuddy cache (summaries, subscriptions) would fall through to MongoDB
+   — higher latency but functional. Both ioredis connections have automatic
+   reconnection built in.
+
+Q: Redis Pub/Sub vs Redis Streams vs Kafka — when to use each?
+A: Redis Pub/Sub: Fire-and-forget, no persistence, no consumer groups. Perfect
+   for real-time price updates where losing one message is fine (the next update
+   replaces it). Redis Streams: Persistent, supports consumer groups, at-least-
+   once delivery. Use when you need message durability (e.g., order processing).
+   Kafka: Distributed, replicated, high throughput, permanent storage. Use for
+   large-scale event sourcing, log aggregation, or cross-datacenter replication.
+   I chose Pub/Sub because market data is ephemeral — a lost price update is
+   replaced by the next one within milliseconds.
+
+── WEBSOCKETS ───────────────────────────────────────────────────────────────────
+
+Q: How does your WebSocket reconnection work?
+A: I use exponential backoff. When the Finnhub WebSocket disconnects, I
+   calculate the delay as min(1000 * 2^attempt, 30000). First attempt waits
+   1 second, then 2, 4, 8, 16, capped at 30 seconds. On successful connection,
+   the attempt counter resets to 0. This prevents overwhelming the server with
+   reconnection attempts while ensuring we reconnect quickly after brief
+   outages. This is the same pattern used by AWS SDKs and Google API clients.
+
+Q: What's the difference between Socket.io and raw WebSockets?
+A: Socket.io wraps WebSockets with additional features: automatic reconnection,
+   fallback to HTTP long-polling, named event system (vs raw message strings),
+   rooms for targeted broadcasting, binary data support, and heartbeat/ping-pong
+   for dead connection detection. I use Socket.io for server-to-client
+   communication (browsers) and raw 'ws' library for the server-to-Finnhub
+   connection (lower overhead, no browser features needed).
+
+── SOCKET.IO ────────────────────────────────────────────────────────────────────
+
+Q: What events does your Socket.io implementation support?
+A: Two events: (1) 'priceSnapshot' — emitted once when a client connects,
+   containing the latest cached prices for all 6 symbols. This ensures the
+   client has data immediately without waiting for the next price change.
+   (2) 'priceUpdate' — emitted continuously whenever Redis Pub/Sub receives
+   new price data from the marketDataGateway. Contains only the changed
+   symbols, not all 6 every time.
+
+Q: How would you add authentication to Socket.io connections?
+A: I would use Socket.io middleware. On the server:
+   io.use((socket, next) => {
+     const token = socket.handshake.auth.token;
+     try { jwt.verify(token, JWT_SECRET); next(); }
+     catch { next(new Error('Authentication error')); }
+   });
+   The client passes the token during connection:
+   io("http://localhost:5000", { auth: { token: "eyJ..." } });
+   This is not implemented yet because Day 1 focuses on infrastructure.
+
+── REST APIs ────────────────────────────────────────────────────────────────────
+
+Q: How do you handle pagination?
+A: I use offset-based pagination with skip and limit. The client sends ?page=2
+   &limit=20. The server calculates skip = (page - 1) * limit = 20, then uses
+   .skip(20).limit(20). I also return metadata: totalCount (from countDocuments),
+   totalPages (Math.ceil(totalCount / limit)), current page, and limit. I cap
+   limit at 100 to prevent abuse. The compound index on { userId: 1,
+   timestamp: -1 } makes this efficient.
+
+Q: Why cursor-based pagination might be better?
+A: Offset pagination has a problem: if new trades are inserted between pages,
+   results can shift (duplicates or missed items). Cursor-based pagination uses
+   a value from the last item (e.g., timestamp or _id) as the starting point
+   for the next page. For trade history, I could use:
+   Trade.find({ userId, timestamp: { $lt: lastTimestamp } }).limit(20)
+   This is more stable but harder to implement "jump to page 5". For an
+   investment-learning module, offset pagination is sufficient.
+
+── JWT ──────────────────────────────────────────────────────────────────────────
+
+Q: How does JWT protect InvestLab endpoints?
+A: Every InvestLab route applies the 'protect' middleware via router.use(protect).
+   This middleware: (1) extracts the Bearer token from the Authorization header,
+   (2) verifies it using jwt.verify() with the server's secret key, (3) looks up
+   the user in MongoDB using the decoded user ID, (4) attaches the user object to
+   req.user. Every controller then uses req.user._id to scope database queries
+   to the authenticated user. This prevents User A from accessing User B's data.
+
+Q: What happens when the JWT expires?
+A: Access tokens expire after 15 minutes. The client uses the refresh token
+   (stored in an httpOnly cookie) to get a new access token via POST
+   /api/auth/refresh. The refresh token has a 7-day lifetime. If both expire,
+   the user must log in again. InvestLab endpoints return 401 "Not authorized"
+   when the token is expired, and the frontend handles the refresh flow.
+
+── SYSTEM DESIGN ────────────────────────────────────────────────────────────────
+
+Q: Design a real-time stock price ticker system.
+A: I would use this exact architecture:
+   1. Data Source: WebSocket connection to a market data provider (Finnhub)
+   2. Ingestion Layer: A service that maintains a WebSocket connection, caches
+      latest prices, and emits events via EventEmitter
+   3. Distribution Layer: Redis Pub/Sub to decouple ingestion from delivery
+      and enable horizontal scaling
+   4. Delivery Layer: Socket.io for WebSocket connections to browser clients
+   5. Storage Layer: MongoDB for portfolios and trades, Redis for caching
+   The key insight is using Redis Pub/Sub as the intermediary so multiple
+   server instances can share the same market data stream.
+
+Q: How would you handle a flash crash scenario?
+A: Several safeguards: (1) Price validation — reject trades if the current
+   price deviates more than X% from the previous cached price, (2) Circuit
+   breaker pattern — temporarily halt trading if price changes exceed a
+   threshold, (3) Rate limiting — prevent rapid-fire buy/sell requests,
+   (4) Trade confirmations — show users the execution price before confirming.
+   Currently none of these are implemented because it's a learning platform,
+   but they would be critical for a production trading system.
+
+── SCALABILITY ──────────────────────────────────────────────────────────────────
+
+Q: How would you scale this to 100,000 users?
+A: Layered approach: (1) Multiple Express servers behind a load balancer —
+   Socket.io uses the Redis adapter for cross-server broadcasting, (2) Finnhub
+   ingestion runs as a single dedicated service (one connection is enough),
+   (3) MongoDB read replicas for heavy read operations like trade history,
+   (4) BullMQ workers for background processing (snapshots, readiness cache),
+   (5) CDN for frontend static assets, (6) Socket.io rooms — only broadcast
+   to users who have InvestLab open, not all connected users.
+
+Q: What's the bottleneck in your current architecture?
+A: At current scale, there's no bottleneck. As users grow, the first bottleneck
+   would be Socket.io connections per server (around 10,000). The solution is
+   horizontal scaling with Redis adapter. The second bottleneck would be MongoDB
+   aggregation queries for readiness scores — solved by caching results in
+   Redis or pre-computing via BullMQ jobs.
+
+── ARCHITECTURE ─────────────────────────────────────────────────────────────────
+
+Q: Why not use microservices?
+A: For a student project with a small team, microservices add operational
+   complexity without proportional benefits. Monolithic with clean module
+   boundaries (services layer, clear file structure) gives us the organizational
+   benefits of microservices without the deployment, networking, and debugging
+   overhead. If the project grew to 5+ developers or needed independent
+   deployment cycles, I would extract finnhubService and the readiness engine
+   into separate microservices.
+
+Q: Explain the separation between finnhubService and marketDataGateway.
+A: Single Responsibility Principle. finnhubService is responsible for connecting
+   to Finnhub, parsing trade data, maintaining the price cache, and handling
+   reconnection. marketDataGateway is responsible for publishing data to Redis.
+   If I want to change how data is distributed (e.g., switch from Redis to
+   Kafka), I only change marketDataGateway. If I want to switch market data
+   providers (e.g., from Finnhub to IEX), I only change finnhubService. Neither
+   knows about the other's implementation.
+
+── PROJECT DECISIONS ────────────────────────────────────────────────────────────
+
+Q: Why did you create the PortfolioSnapshot model on Day 1 if it's not used yet?
+A: Forward-thinking design. Creating the model now ensures the schema is defined
+   alongside related models (Portfolio, Trade). When I add the BullMQ snapshot
+   job later, I won't need to modify existing code or worry about schema
+   compatibility. The model file is just a few lines — the cost of creating it
+   is negligible, but the cost of retrofitting it later (potential data
+   migration, index creation on a large collection) would be higher.
+
+Q: Why fire-and-forget for Portfolio creation on signup?
+A: The Portfolio is secondary to the signup flow. If Portfolio creation fails
+   (e.g., MongoDB timeout), the user should still be able to sign up and use
+   other BudgetBuddy features. The getPortfolio endpoint has lazy initialization
+   — it creates the portfolio on first access if it doesn't exist. So even if
+   the fire-and-forget fails, the user gets a portfolio the first time they
+   visit InvestLab. This is a resilience pattern: non-critical side effects
+   should never block the primary operation.
+
+
+================================================================================
+         SECTION 20: HR + PROJECT DISCUSSION QUESTIONS
+================================================================================
+
+Q: Why did you build InvestLab?
+A: I noticed that student finance apps focus only on tracking expenses, but
+   never teach students the NEXT step — growing their money. InvestLab bridges
+   that gap by first assessing if a student is financially ready to invest
+   (using their actual expense and budget data from BudgetBuddy), and then
+   providing a safe paper trading environment with real market data. The goal
+   is financial education, not stock trading.
+
+Q: What challenges did you face?
+A: The biggest challenge was designing the real-time market data pipeline.
+   I needed to ensure that Finnhub WebSocket data flowed through multiple
+   layers (EventEmitter, Redis Pub/Sub, Socket.io) without introducing
+   latency or losing data. The key insight was using Redis Pub/Sub as the
+   intermediary layer instead of directly connecting Finnhub to Socket.io.
+   This required understanding Redis's limitation that Pub/Sub and regular
+   commands can't share a connection. Another challenge was calculating the
+   weighted average buy price correctly when a user buys the same stock
+   multiple times at different prices.
+
+Q: What would you improve?
+A: Three things. First, I'd add a tradeService to move buy/sell business logic
+   out of the controller into a proper service layer — currently it's slightly
+   fat because validation and business logic are mixed. Second, I'd add Redis
+   caching for readiness scores (they involve multiple aggregation queries that
+   don't change frequently). Third, I'd implement Socket.io authentication and
+   rooms so that price updates are only sent to users who have InvestLab open,
+   reducing unnecessary bandwidth.
+
+Q: Why not polling instead of WebSockets?
+A: Polling means the client repeatedly asks "any updates?" every N seconds.
+   For market data, this has three problems: (1) High latency — if you poll
+   every 5 seconds, you could miss price changes that happened in between.
+   (2) Wasted requests — most polls return "no change." (3) Higher server
+   load — every poll creates a new HTTP connection with full headers.
+   WebSockets keep a single persistent connection open, and the server pushes
+   data ONLY when something changes. This gives us millisecond latency with
+   minimal bandwidth.
+
+Q: Why not SQL (PostgreSQL) instead of MongoDB?
+A: MongoDB was chosen for three reasons. First, the existing BudgetBuddy
+   codebase already uses MongoDB — using a different database would add
+   operational complexity (two databases to manage, backup, monitor). Second,
+   the Portfolio schema benefits from MongoDB's embedding — holdings are
+   subdocuments inside the portfolio, enabling atomic updates without
+   multi-table transactions. Third, the flexible schema lets me iterate
+   quickly — I can add fields to Trade or Portfolio without ALTER TABLE
+   migrations. That said, PostgreSQL would work well too — especially for
+   the Trade collection where strong ACID transactions and complex analytical
+   queries would benefit from SQL's strengths.
+
+Q: Why not direct Finnhub → Socket.io? Why the Redis layer in between?
+A: Three reasons: scalability, decoupling, and observability. (1) Scalability:
+   If I add a second Express server behind a load balancer, only the server
+   with the Finnhub connection would receive price data. With Redis, BOTH
+   servers subscribe to the same channel and broadcast to their own clients.
+   (2) Decoupling: Without Redis, finnhubService needs a reference to the
+   Socket.io instance. With Redis, it publishes to a channel and doesn't know
+   or care who subscribes. (3) Observability: I can debug the data flow by
+   running "redis-cli SUBSCRIBE market:prices" to see raw data without
+   touching the application. This is the same architecture used by production
+   systems like Slack, Discord, and Robinhood.
+
+Q: How does InvestLab integrate with existing BudgetBuddy features?
+A: InvestLab reuses existing data without duplicating it. The readiness
+   endpoint queries the Transaction collection (for income/expenses), the
+   Budget collection (for budget adherence), and the subscriptionService
+   (for subscription burden). It doesn't create separate expense or budget
+   tables — it reads directly from the same data the user already manages.
+   This means the readiness score updates automatically as the user tracks
+   more expenses or sets new budgets. Zero additional data entry required.
+
+Q: What's the most interesting technical decision you made?
+A: The readiness scoring engine being a pure function with no database access.
+   The controller handles all data gathering (6+ MongoDB queries), then passes
+   the aggregated inputs to calculateReadiness(). This means the scoring logic
+   is completely independent of the database, the HTTP layer, and the rest of
+   the application. I can unit test it with mock inputs, reuse it in a BullMQ
+   background job, or even run it on the client side for instant previews.
+   This separation of "data gathering" from "computation" is a pattern I
+   apply wherever possible.
+
+Q: What did you learn from building this?
+A: Three key lessons. (1) Architecture matters more than code: The decision to
+   use Redis Pub/Sub between Finnhub and Socket.io was the most impactful
+   choice — it affected every other design decision. (2) Separate what changes
+   independently: Market data providers might change, scoring algorithms might
+   change, delivery mechanisms might change — keeping each in its own service
+   file means changes are isolated. (3) Design for the future but build for
+   today: I created the PortfolioSnapshot model even though nothing populates
+   it yet, because the cost of creating it now is near zero, but the cost
+   of retrofitting it later could be significant.
+
+
+================================================================================
+                           END OF DOCUMENT
+================================================================================
+
+  Total New Files:       10
+  Total Modified Files:   2
+  Total API Endpoints:    5
+  Socket.io Events:       2 (priceSnapshot, priceUpdate)
+  Redis Channels:         1 (market:prices)
+  MongoDB Collections:    3 (portfolios, trades, portfoliosnapshots)
+  Tracked Symbols:        6 (AAPL, MSFT, NVDA, GOOGL, AMZN, TSLA)
+  Starting Cash:         $10,000
+
+  Next Steps (Day 2+):
+  - Frontend components for InvestLab
+  - BullMQ snapshot job for portfolio value history
+  - Socket.io authentication and rooms
+  - AI investment advisor integration
+  - Achievement/XP system for trades
+
+================================================================================

@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 import { Wallet, TrendingDown, Trophy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import SpendingForecast from '../components/dashboard/SpendingForecast';
 import './dashboard.css';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -297,6 +298,9 @@ const DashboardPage = () => {
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {/* ── Row 4: Spending Forecast ── */}
+        <SpendingForecast />
 
       </div>
     </div>

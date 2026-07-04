@@ -17,6 +17,7 @@ services:
       - /app/node_modules       # Anonymous volume so host modules don't override container's
     depends_on:
       - redis
+      - ml-service
     restart: unless-stopped
 
   # ── Redis (in-memory cache / session store) ──────────────────────────────────
@@ -24,6 +25,18 @@ services:
     image: redis:alpine         # Smallest official Redis image
     ports:
       - "6379:6379"             # Expose so you can connect locally with redis-cli too
+    restart: unless-stopped
+
+  # ── Python ML microservice (category classification) ─────────────────────────
+  ml-service:
+    build: ./ml-service
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./ml-service:/app
+    working_dir: /app
+    command: >
+      sh -c "python train.py && python app.py"
     restart: unless-stopped
 
 # NOTE: MongoDB is NOT in Docker — it runs on your host machine (or Atlas).

@@ -11,7 +11,7 @@ import SignupPage from './components/SignupPage';
 import LoginPage from './components/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import TrackerPage from './pages/TrackerPage';
-import StocksPage from './pages/StocksPage';
+import InvestLabPage from './pages/InvestLabPage';
 import ScholarshipsPage from './pages/ScholarshipsPage';
 
 // ── Protected Route ────────────────────────────────────────────────────────────
@@ -56,8 +56,15 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route path="/stocks" element={<StocksPage />} />
-            <Route path="/scholarships" element={<ScholarshipsPage />} />
+            <Route path="/stocks" element={<InvestLabPage />} />
+            <Route
+              path="/scholarships"
+              element={
+                <ProtectedRoute>
+                  <ScholarshipsPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Quiz routes */}
             <Route path="/quizzes" element={<QuizDashboard />} />
